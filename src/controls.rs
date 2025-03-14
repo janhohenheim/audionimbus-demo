@@ -1,7 +1,7 @@
-use bevy::prelude::*;
 use bevy::input::{keyboard::KeyCode, mouse::MouseButton};
+use bevy::prelude::*;
 
-#[derive(bevy::ecs::prelude::Resource, Debug)]
+#[derive(Resource, Debug)]
 pub struct Controls {
     pub move_forward: ButtonInput,
     pub move_backward: ButtonInput,

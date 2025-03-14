@@ -1,9 +1,15 @@
 use bevy::core_pipeline::{bloom::Bloom, tonemapping::Tonemapping};
 use bevy::prelude::*;
+use bevy_rapier3d::prelude::*;
 
+use bevy::prelude::BuildChildren;
+use bevy::prelude::PluginGroup;
+
+mod character;
 mod controls;
 mod cursor;
 mod input;
+mod viewpoint;
 
 fn main() {
     let mut app = App::new();
@@ -15,9 +21,12 @@ fn main() {
         }),
         ..Default::default()
     }))
+    .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
     .add_plugins(cursor::Plugin)
     .add_plugins(controls::Plugin)
     .add_plugins(input::Plugin)
+    .add_plugins(viewpoint::Plugin)
+    .add_plugins(character::Plugin)
     .add_systems(Startup, setup);
 
     app.run();
@@ -43,7 +52,7 @@ fn setup(
     commands.spawn((
         Mesh3d(cuboid),
         MeshMaterial3d(material.clone()),
-        Transform::from_xyz(2.0, 2.0, 2.0),
+        Transform::from_xyz(0.0, 2.0, 0.0),
     ));
 
     // Ground
@@ -57,14 +66,31 @@ fn setup(
         ..Default::default()
     });
 
-    commands.spawn((
-        Camera3d::default(),
-        Camera {
-            hdr: true,
-            ..default()
-        },
-        Tonemapping::TonyMcMapface,
-        Bloom::NATURAL,
-        Transform::from_xyz(0.0, 7., 14.0).looking_at(Vec3::new(0., 1., 0.), Vec3::Y),
-    ));
+    commands
+        .spawn(character::Character {
+            viewpoint: viewpoint::Viewpoint {
+                translation: bevy::math::Vec3::new(0.0, 2.0, 0.0),
+                ..Default::default()
+            },
+            rigid_body: bevy_rapier3d::dynamics::RigidBody::KinematicPositionBased,
+            collider: bevy_rapier3d::geometry::Collider::compound(vec![(
+                Vec3::new(0.0, 1.0, 0.0),
+                Quat::IDENTITY,
+                bevy_rapier3d::geometry::Collider::cylinder(1.0, 0.5),
+            )]),
+            transform: bevy::transform::components::Transform::from_translation(
+                bevy::math::Vec3::new(0.0, 0.0, 10.0),
+            ),
+            ..Default::default()
+        })
+        .with_child((
+            Camera3d::default(),
+            Camera {
+                hdr: true,
+                ..default()
+            },
+            Tonemapping::TonyMcMapface,
+            Bloom::NATURAL,
+            Transform::default(),
+        ));
 }
