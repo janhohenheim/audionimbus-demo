@@ -1,6 +1,10 @@
 use bevy::core_pipeline::{bloom::Bloom, tonemapping::Tonemapping};
 use bevy::prelude::*;
 
+mod controls;
+mod cursor;
+mod input;
+
 fn main() {
     let mut app = App::new();
 
@@ -11,6 +15,9 @@ fn main() {
         }),
         ..Default::default()
     }))
+    .add_plugins(cursor::Plugin)
+    .add_plugins(controls::Plugin)
+    .add_plugins(input::Plugin)
     .add_systems(Startup, setup);
 
     app.run();
@@ -24,14 +31,8 @@ fn setup(
     let cuboid = meshes.add(Cuboid::default());
 
     let material = materials.add(StandardMaterial {
-        base_color: Color::Srgba(Srgba {
-            red: 1.0,
-            green: 0.0,
-            blue: 0.0,
-            alpha: 1.0,
-        }),
         emissive: LinearRgba {
-            red: 1000.0,
+            red: 300.0,
             green: 0.0,
             blue: 0.0,
             alpha: 1.0,
