@@ -5,6 +5,7 @@ use bevy_rapier3d::prelude::*;
 use bevy::prelude::BuildChildren;
 use bevy::prelude::PluginGroup;
 
+mod audio;
 mod character;
 mod controls;
 mod cursor;
@@ -27,6 +28,7 @@ fn main() {
     .add_plugins(input::Plugin)
     .add_plugins(viewpoint::Plugin)
     .add_plugins(character::Plugin)
+    .add_plugins(audio::Plugin)
     .add_systems(Startup, setup);
 
     app.run();
@@ -42,7 +44,7 @@ fn setup(
     let material = materials.add(StandardMaterial {
         emissive: LinearRgba {
             red: 300.0,
-            green: 0.0,
+            green: 100.0,
             blue: 0.0,
             alpha: 1.0,
         },
