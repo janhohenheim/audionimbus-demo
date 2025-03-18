@@ -10,6 +10,7 @@ mod character;
 mod controls;
 mod cursor;
 mod input;
+mod orbit;
 mod viewpoint;
 
 fn main() {
@@ -29,6 +30,7 @@ fn main() {
     .add_plugins(viewpoint::Plugin)
     .add_plugins(character::Plugin)
     .add_plugins(audio::Plugin)
+    .add_plugins(orbit::Plugin)
     .add_systems(Startup, setup);
 
     app.run();
@@ -40,8 +42,7 @@ fn setup(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let cuboid = meshes.add(Cuboid::default());
-
-    let material = materials.add(StandardMaterial {
+    let cuboid_material = materials.add(StandardMaterial {
         emissive: LinearRgba {
             red: 300.0,
             green: 100.0,
@@ -50,11 +51,37 @@ fn setup(
         },
         ..default()
     });
-
     commands.spawn((
         Mesh3d(cuboid),
-        MeshMaterial3d(material.clone()),
+        MeshMaterial3d(cuboid_material),
         Transform::from_xyz(0.0, 2.0, 0.0),
+    ));
+
+    let sphere = meshes.add(Sphere { radius: 0.1 });
+    let sphere_material = materials.add(StandardMaterial {
+        emissive: LinearRgba {
+            red: 0.0,
+            green: 0.0,
+            blue: 200.0,
+            alpha: 1.0,
+        },
+        ..default()
+    });
+    commands.spawn((
+        Mesh3d(sphere),
+        MeshMaterial3d(sphere_material),
+        Transform::default(),
+        audio::AudioSource {
+            data: audio::sine_wave(440.0, audio::SAMPLING_RATE, 0.2, audio::SAMPLING_RATE),
+            is_repeating: true,
+            position: 0,
+        },
+        orbit::Orbit {
+            center: Vec3::new(0.0, 2.0, 0.0),
+            radius: 3.0,
+            angle: 0.0,
+            speed: std::f32::consts::PI / 1.0, // 90 degrees per second.
+        },
     ));
 
     // Ground
