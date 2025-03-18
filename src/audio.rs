@@ -8,6 +8,8 @@ use super::viewpoint::Viewpoint;
 pub const FRAME_SIZE: usize = 1024;
 pub const SAMPLING_RATE: usize = 48000;
 pub const NUM_CHANNELS: usize = 2;
+pub const AMBISONICS_ORDER: usize = 2;
+pub const AMBISONICS_NUM_CHANNELS: usize = (AMBISONICS_ORDER + 1).pow(2);
 
 #[derive(Resource)]
 pub struct Audio {
@@ -103,6 +105,28 @@ impl Plugin {
         let (global_transform, viewpoint) = query_character.single();
         let listener_position = global_transform.translation() + viewpoint.translation;
 
+        let listener_orientation_right = viewpoint.rotation * Vec3::X;
+        let listener_orientation_up = viewpoint.rotation * Vec3::Y;
+        let listener_orientation_ahead = viewpoint.rotation * -Vec3::Z;
+        let listener_orientation = audionimbus::CoordinateSystem {
+            right: audionimbus::Vector3::new(
+                listener_orientation_right.x,
+                listener_orientation_right.y,
+                listener_orientation_right.z,
+            ),
+            up: audionimbus::Vector3::new(
+                listener_orientation_up.x,
+                listener_orientation_up.y,
+                listener_orientation_up.z,
+            ),
+            ahead: audionimbus::Vector3::new(
+                listener_orientation_ahead.x,
+                listener_orientation_ahead.y,
+                listener_orientation_ahead.z,
+            ),
+            origin: audionimbus::Point::default(),
+        };
+
         let times_finished_this_tick = audio.timer.times_finished_this_tick();
 
         for _ in 0..times_finished_this_tick {
@@ -155,19 +179,20 @@ impl Plugin {
                 let direction = listener_position - source_position;
                 let direction = audionimbus::Direction::new(-direction.x, direction.y, direction.z);
 
-                let mut ambisonics_encode_container = vec![0.0; FRAME_SIZE * 9];
+                let mut ambisonics_encode_container =
+                    vec![0.0; FRAME_SIZE * AMBISONICS_NUM_CHANNELS];
                 let ambisonics_encode_buffer =
                     audionimbus::AudioBuffer::try_with_data_and_settings(
                         &mut ambisonics_encode_container,
                         &audionimbus::AudioBufferSettings {
-                            num_channels: Some(9),
+                            num_channels: Some(AMBISONICS_NUM_CHANNELS),
                             ..Default::default()
                         },
                     )
                     .unwrap();
                 let ambisonics_encode_effect_params = audionimbus::AmbisonicsEncodeEffectParams {
                     direction,
-                    order: 2,
+                    order: AMBISONICS_ORDER,
                 };
                 let _effect_state = audio.ambisonics_encode_effect.apply(
                     &ambisonics_encode_effect_params,
@@ -175,21 +200,21 @@ impl Plugin {
                     &ambisonics_encode_buffer,
                 );
 
-                let mut ambisonics_rotation_container = vec![0.0; FRAME_SIZE * 9];
+                let mut ambisonics_rotation_container =
+                    vec![0.0; FRAME_SIZE * AMBISONICS_NUM_CHANNELS];
                 let ambisonics_rotation_buffer =
                     audionimbus::AudioBuffer::try_with_data_and_settings(
                         &mut ambisonics_rotation_container,
                         &audionimbus::AudioBufferSettings {
-                            num_channels: Some(9),
+                            num_channels: Some(AMBISONICS_NUM_CHANNELS),
                             ..Default::default()
                         },
                     )
                     .unwrap();
                 let ambisonics_rotation_effect_params =
                     audionimbus::AmbisonicsRotationEffectParams {
-                        order: 2,
-                        // TODO: update based on viewpoint.
-                        orientation: audionimbus::CoordinateSystem::default(),
+                        order: AMBISONICS_ORDER,
+                        orientation: listener_orientation,
                     };
                 let _effect_state = audio.ambisonics_rotation_effect.apply(
                     &ambisonics_rotation_effect_params,
@@ -208,7 +233,7 @@ impl Plugin {
                 .unwrap();
 
                 let ambisonics_decode_effect_params = audionimbus::AmbisonicsDecodeEffectParams {
-                    order: 2,
+                    order: AMBISONICS_ORDER,
                     hrtf: &audio.hrtf,
                     orientation: audionimbus::CoordinateSystem::default(),
                     binaural: true,
@@ -274,12 +299,11 @@ impl bevy::app::Plugin for Plugin {
         )
         .unwrap();
 
-        let ambisonics_order = 2;
         let ambisonics_encode_effect = audionimbus::AmbisonicsEncodeEffect::try_new(
             &context,
             &settings,
             &audionimbus::AmbisonicsEncodeEffectSettings {
-                max_order: ambisonics_order,
+                max_order: AMBISONICS_ORDER,
             },
         )
         .unwrap();
@@ -287,7 +311,7 @@ impl bevy::app::Plugin for Plugin {
             &context,
             &settings,
             &audionimbus::AmbisonicsRotationEffectSettings {
-                max_order: ambisonics_order,
+                max_order: AMBISONICS_ORDER,
             },
         )
         .unwrap();
@@ -295,7 +319,7 @@ impl bevy::app::Plugin for Plugin {
             &context,
             &settings,
             &audionimbus::AmbisonicsDecodeEffectSettings {
-                max_order: ambisonics_order,
+                max_order: AMBISONICS_ORDER,
                 speaker_layout: audionimbus::SpeakerLayout::Stereo,
                 hrtf: &hrtf,
             },

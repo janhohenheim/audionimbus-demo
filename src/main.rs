@@ -80,7 +80,7 @@ fn setup(
             center: Vec3::new(0.0, 2.0, 0.0),
             radius: 3.0,
             angle: 0.0,
-            speed: std::f32::consts::PI / 1.0, // 90 degrees per second.
+            speed: std::f32::consts::PI * 2.0,
         },
     ));
 
