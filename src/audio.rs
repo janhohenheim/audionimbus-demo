@@ -15,6 +15,8 @@ pub const AMBISONICS_NUM_CHANNELS: usize = (AMBISONICS_ORDER + 1).pow(2);
 pub struct Audio {
     pub context: audionimbus::Context,
     pub settings: audionimbus::AudioSettings,
+    pub scene: audionimbus::Scene,
+    pub simulator: audionimbus::Simulator,
     pub hrtf: audionimbus::Hrtf,
     pub binaural_effect: audionimbus::BinauralEffect,
     pub ambisonics_encode_effect: audionimbus::AmbisonicsEncodeEffect,
@@ -85,6 +87,7 @@ pub struct SineWaveParams {
 #[derive(Component, Debug)]
 #[require(GlobalTransform)]
 pub struct AudioSource {
+    pub source: audionimbus::Source,
     pub data: Vec<audionimbus::Sample>, // Mono
     pub is_repeating: bool,
     pub position: usize,
@@ -176,8 +179,8 @@ impl Plugin {
                 let input_buffer = audionimbus::AudioBuffer::try_with_data(&frame).unwrap();
 
                 let source_position = source_global_transform.translation();
-                let direction = listener_position - source_position;
-                let direction = audionimbus::Direction::new(-direction.x, direction.y, direction.z);
+                let direction = source_position - listener_position;
+                let direction = audionimbus::Direction::new(direction.x, direction.y, -direction.z);
 
                 let mut ambisonics_encode_container =
                     vec![0.0; FRAME_SIZE * AMBISONICS_NUM_CHANNELS];
@@ -282,6 +285,32 @@ impl bevy::app::Plugin for Plugin {
             sampling_rate: SAMPLING_RATE,
         };
 
+        let scene =
+            audionimbus::Scene::try_new(&context, &audionimbus::SceneSettings::default()).unwrap();
+
+        let simulation_settings = audionimbus::SimulationSettings {
+            scene_params: audionimbus::SceneParams::Default,
+            direct_simulation: Some(audionimbus::DirectSimulationSettings {
+                max_num_occlusion_samples: 16,
+            }),
+            reflections_simulation: Some(audionimbus::ReflectionsSimulationSettings::Convolution {
+                max_num_rays: 32,
+                num_diffuse_samples: 16,
+                max_duration: 5.0,
+                max_order: AMBISONICS_ORDER,
+                max_num_sources: 100,
+                num_threads: 1,
+            }),
+            pathing_simulation: Some(audionimbus::PathingSimulationSettings {
+                num_visibility_samples: 16,
+            }),
+            sampling_rate: SAMPLING_RATE,
+            frame_size: FRAME_SIZE,
+        };
+        let mut simulator = audionimbus::Simulator::try_new(&context, simulation_settings).unwrap();
+        simulator.set_scene(&scene);
+        simulator.commit();
+
         let hrtf = audionimbus::Hrtf::try_new(
             &context,
             &settings,
@@ -329,6 +358,8 @@ impl bevy::app::Plugin for Plugin {
         app.insert_resource(Audio {
             context,
             settings,
+            scene,
+            simulator,
             hrtf,
             binaural_effect,
             ambisonics_encode_effect,

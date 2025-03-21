@@ -40,6 +40,7 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    audio: Res<audio::Audio>,
 ) {
     let cuboid = meshes.add(Cuboid::default());
     let cuboid_material = materials.add(StandardMaterial {
@@ -67,11 +68,45 @@ fn setup(
         },
         ..default()
     });
+    let simulation_flags = audionimbus::SimulationFlags::DIRECT
+        | audionimbus::SimulationFlags::REFLECTIONS
+        | audionimbus::SimulationFlags::PATHING;
+    let mut source = audionimbus::Source::try_new(
+        &audio.simulator,
+        &audionimbus::SourceSettings {
+            flags: simulation_flags,
+        },
+    )
+    .unwrap();
+    source.set_inputs(
+        simulation_flags,
+        audionimbus::SimulationInputs {
+            source: audionimbus::CoordinateSystem::default(),
+            direct_simulation: Some(audionimbus::DirectSimulationParameters {
+                distance_attenuation: Some(audionimbus::DistanceAttenuationModel::Default),
+                air_absorption: Some(audionimbus::AirAbsorptionModel::Default),
+                directivity: Some(audionimbus::Directivity::default()),
+                occlusion: Some(audionimbus::Occlusion {
+                    transmission: Some(audionimbus::TransmissionParameters {
+                        num_transmission_rays: 8,
+                    }),
+                    algorithm: audionimbus::OcclusionAlgorithm::Raycast,
+                }),
+            }),
+            reflections_simulation: Some(
+                audionimbus::ReflectionsSimulationParameters::Convolution {
+                    baked_data_identifier: None,
+                },
+            ),
+            pathing_simulation: None,
+        },
+    );
     commands.spawn((
         Mesh3d(sphere),
         MeshMaterial3d(sphere_material),
         Transform::default(),
         audio::AudioSource {
+            source,
             data: audio::sine_wave(440.0, audio::SAMPLING_RATE, 0.2, audio::SAMPLING_RATE),
             is_repeating: true,
             position: 0,
