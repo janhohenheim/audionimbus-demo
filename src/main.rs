@@ -40,7 +40,7 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    audio: Res<audio::Audio>,
+    mut audio: ResMut<audio::Audio>,
 ) {
     let cuboid = meshes.add(Cuboid::default());
     let cuboid_material = materials.add(StandardMaterial {
@@ -78,29 +78,8 @@ fn setup(
         },
     )
     .unwrap();
-    source.set_inputs(
-        simulation_flags,
-        audionimbus::SimulationInputs {
-            source: audionimbus::CoordinateSystem::default(),
-            direct_simulation: Some(audionimbus::DirectSimulationParameters {
-                distance_attenuation: Some(audionimbus::DistanceAttenuationModel::Default),
-                air_absorption: Some(audionimbus::AirAbsorptionModel::Default),
-                directivity: Some(audionimbus::Directivity::default()),
-                occlusion: Some(audionimbus::Occlusion {
-                    transmission: Some(audionimbus::TransmissionParameters {
-                        num_transmission_rays: 8,
-                    }),
-                    algorithm: audionimbus::OcclusionAlgorithm::Raycast,
-                }),
-            }),
-            reflections_simulation: Some(
-                audionimbus::ReflectionsSimulationParameters::Convolution {
-                    baked_data_identifier: None,
-                },
-            ),
-            pathing_simulation: None,
-        },
-    );
+    audio.simulator.add_source(&source);
+    audio.simulator.commit();
     commands.spawn((
         Mesh3d(sphere),
         MeshMaterial3d(sphere_material),
@@ -111,12 +90,14 @@ fn setup(
             is_repeating: true,
             position: 0,
         },
+        /*
         orbit::Orbit {
             center: Vec3::new(0.0, 2.0, 0.0),
             radius: 3.0,
             angle: 0.0,
             speed: std::f32::consts::PI * 2.0,
         },
+        */
     ));
 
     // Ground
