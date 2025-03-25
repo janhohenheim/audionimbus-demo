@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use bevy::utils::Duration;
+use itertools::izip;
 use rodio::{OutputStream, Sink, Source};
 
 use super::character::CharacterMarker;
@@ -12,6 +13,7 @@ pub const AMBISONICS_ORDER: usize = 2;
 pub const AMBISONICS_NUM_CHANNELS: usize = (AMBISONICS_ORDER + 1).pow(2);
 pub const GAIN_FACTOR_DIRECT: f32 = 1.0;
 pub const GAIN_FACTOR_REFLECTIONS: f32 = 0.3;
+pub const GAIN_FACTOR_REVERB: f32 = 0.1;
 
 #[derive(Resource)]
 pub struct Audio {
@@ -22,6 +24,7 @@ pub struct Audio {
     pub hrtf: audionimbus::Hrtf,
     pub direct_effect: audionimbus::DirectEffect,
     pub reflection_effect: audionimbus::ReflectionEffect,
+    pub reverb_effect: audionimbus::ReflectionEffect,
     pub ambisonics_encode_effect: audionimbus::AmbisonicsEncodeEffect,
     pub ambisonics_decode_effect: audionimbus::AmbisonicsDecodeEffect,
     pub sink: Sink,
@@ -78,14 +81,6 @@ impl Source for AudioFrame {
     }
 }
 
-#[derive(Resource, Debug)]
-pub struct SineWaveParams {
-    pub frequency: f32,
-    pub amplitude: f32,
-    pub phase: f32,
-    pub angle: f32,
-}
-
 #[derive(Component, Debug)]
 #[require(GlobalTransform)]
 pub struct AudioSource {
@@ -93,6 +88,12 @@ pub struct AudioSource {
     pub data: Vec<audionimbus::Sample>, // Mono
     pub is_repeating: bool,
     pub position: usize,
+}
+
+#[derive(Resource)]
+pub struct ListenerSource {
+    // Special source used for reverb.
+    pub source: audionimbus::Source,
 }
 
 pub struct Plugin;
@@ -104,6 +105,7 @@ impl Plugin {
         mut query_audio_sources: Query<(Entity, &GlobalTransform, &mut AudioSource)>,
         time: Res<Time>,
         mut audio: ResMut<Audio>,
+        mut listener_source: ResMut<ListenerSource>,
     ) {
         audio.timer.tick(time.delta());
 
@@ -136,14 +138,46 @@ impl Plugin {
             ),
         };
 
+        // Listener source to simulate reverb.
+        listener_source.source.set_inputs(
+            audionimbus::SimulationFlags::REFLECTIONS,
+            audionimbus::SimulationInputs {
+                source: audionimbus::CoordinateSystem {
+                    origin: audionimbus::Vector3::new(
+                        listener_position.x,
+                        listener_position.y,
+                        listener_position.z,
+                    ),
+                    ..Default::default()
+                },
+                direct_simulation: Some(audionimbus::DirectSimulationParameters {
+                    distance_attenuation: Some(audionimbus::DistanceAttenuationModel::Default),
+                    air_absorption: Some(audionimbus::AirAbsorptionModel::Default),
+                    directivity: Some(audionimbus::Directivity::default()),
+                    occlusion: Some(audionimbus::Occlusion {
+                        transmission: Some(audionimbus::TransmissionParameters {
+                            num_transmission_rays: 8,
+                        }),
+                        algorithm: audionimbus::OcclusionAlgorithm::Raycast,
+                    }),
+                }),
+                reflections_simulation: Some(
+                    audionimbus::ReflectionsSimulationParameters::Convolution {
+                        baked_data_identifier: None,
+                    },
+                ),
+                pathing_simulation: None,
+            },
+        );
+
         let simulation_flags =
             audionimbus::SimulationFlags::DIRECT | audionimbus::SimulationFlags::REFLECTIONS;
         audio.simulator.set_shared_inputs(
             simulation_flags,
             &audionimbus::SimulationSharedInputs {
                 listener: listener_orientation,
-                num_rays: 4096,
-                num_bounces: 16,
+                num_rays: 8192,
+                num_bounces: 32,
                 duration: 2.0,
                 order: AMBISONICS_ORDER,
                 irradiance_min_distance: 1.0,
@@ -152,6 +186,11 @@ impl Plugin {
         );
         audio.simulator.run_direct();
         audio.simulator.run_reflections();
+
+        let reverb_simulation_outputs = listener_source
+            .source
+            .get_outputs(audionimbus::SimulationFlags::REFLECTIONS);
+        let reverb_effect_params = reverb_simulation_outputs.reflections();
 
         let times_finished_this_tick = audio.timer.times_finished_this_tick();
 
@@ -287,19 +326,43 @@ impl Plugin {
                     &reflection_buffer,
                 );
 
-                let mut mix_container = ambisonics_encode_buffer
-                    .channels()
-                    .zip(reflection_buffer.channels())
-                    .flat_map(|(direct_channel, reflection_channel)| {
-                        direct_channel.iter().zip(reflection_channel.iter()).map(
-                            |(direct_sample, reflections_sample)| {
-                                (direct_sample * GAIN_FACTOR_DIRECT
-                                    + reflections_sample * GAIN_FACTOR_REFLECTIONS)
-                                    / 2.0
-                            },
-                        )
-                    })
-                    .collect::<Vec<_>>();
+                let mut reverb_container = vec![0.0; FRAME_SIZE * AMBISONICS_NUM_CHANNELS];
+                let reverb_buffer = audionimbus::AudioBuffer::try_with_data_and_settings(
+                    &mut reverb_container,
+                    &audionimbus::AudioBufferSettings {
+                        num_channels: Some(AMBISONICS_NUM_CHANNELS),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+                let _effect_state =
+                    audio
+                        .reverb_effect
+                        .apply(&reverb_effect_params, &input_buffer, &reverb_buffer);
+
+                let mut mix_container = izip!(
+                    ambisonics_encode_buffer.channels(),
+                    reflection_buffer.channels(),
+                    reverb_buffer.channels()
+                )
+                .flat_map(|(direct_channel, reflection_channel, reverb_channel)| {
+                    izip!(
+                        direct_channel.iter(),
+                        reflection_channel.iter(),
+                        reverb_channel.iter()
+                    )
+                    .map(
+                        |(direct_sample, reflections_sample, reverb_sample)| {
+                            (direct_sample * GAIN_FACTOR_DIRECT
+                                + reflections_sample * GAIN_FACTOR_REFLECTIONS
+                                + reverb_sample * GAIN_FACTOR_REVERB)
+                                / (GAIN_FACTOR_DIRECT
+                                    + GAIN_FACTOR_REFLECTIONS
+                                    + GAIN_FACTOR_REVERB)
+                        },
+                    )
+                })
+                .collect::<Vec<_>>();
                 let mix_buffer = audionimbus::AudioBuffer::try_with_data_and_settings(
                     &mut mix_container,
                     &audionimbus::AudioBufferSettings {
@@ -438,6 +501,18 @@ impl bevy::app::Plugin for Plugin {
         };
         let mut simulator = audionimbus::Simulator::try_new(&context, simulation_settings).unwrap();
         simulator.set_scene(&scene);
+        // Listener source used for reverb.
+        let listener_source = audionimbus::Source::try_new(
+            &simulator,
+            &audionimbus::SourceSettings {
+                flags: audionimbus::SimulationFlags::REFLECTIONS,
+            },
+        )
+        .unwrap();
+        simulator.add_source(&listener_source);
+        app.insert_resource(ListenerSource {
+            source: listener_source,
+        });
         simulator.commit();
 
         let hrtf = audionimbus::Hrtf::try_new(
@@ -458,6 +533,16 @@ impl bevy::app::Plugin for Plugin {
         .unwrap();
 
         let reflection_effect = audionimbus::ReflectionEffect::try_new(
+            &context,
+            &settings,
+            &audionimbus::ReflectionEffectSettings::Convolution {
+                impulse_response_size: 2 * SAMPLING_RATE,
+                num_channels: AMBISONICS_NUM_CHANNELS,
+            },
+        )
+        .unwrap();
+
+        let reverb_effect = audionimbus::ReflectionEffect::try_new(
             &context,
             &settings,
             &audionimbus::ReflectionEffectSettings::Convolution {
@@ -495,6 +580,7 @@ impl bevy::app::Plugin for Plugin {
             hrtf,
             direct_effect,
             reflection_effect,
+            reverb_effect,
             ambisonics_encode_effect,
             ambisonics_decode_effect,
             sink,
@@ -502,13 +588,6 @@ impl bevy::app::Plugin for Plugin {
                 Duration::from_secs_f32(FRAME_SIZE as f32 / SAMPLING_RATE as f32),
                 TimerMode::Repeating,
             ),
-        });
-
-        app.insert_resource(SineWaveParams {
-            frequency: 440.0,
-            amplitude: 0.2,
-            phase: 0.0,
-            angle: 0.0,
         });
 
         app.add_systems(PostUpdate, Self::process_frame);
