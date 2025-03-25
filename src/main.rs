@@ -1,6 +1,7 @@
 use bevy::core_pipeline::{bloom::Bloom, tonemapping::Tonemapping};
 use bevy::prelude::*;
 use bevy_rapier3d::prelude::*;
+use std::io::Read;
 
 use bevy::prelude::BuildChildren;
 use bevy::prelude::PluginGroup;
@@ -81,13 +82,23 @@ fn setup(
     .unwrap();
     audio.simulator.add_source(&source);
     audio.simulator.commit();
+
+    let assets = std::path::Path::new(env!("OUT_DIR")).join("assets");
+    let file = std::fs::File::open(assets.join("piano.raw")).unwrap();
+    let mut reader = std::io::BufReader::new(file);
+    let mut samples: Vec<f32> = Vec::new();
+    let mut buffer = [0u8; 4]; // f32 is 4 bytes
+    while reader.read_exact(&mut buffer).is_ok() {
+        let sample = f32::from_le_bytes(buffer);
+        samples.push(sample);
+    }
     commands.spawn((
         Mesh3d(sphere),
         MeshMaterial3d(sphere_material),
         Transform::from_xyz(0.0, 2.0, 0.0),
         audio::AudioSource {
             source,
-            data: audio::sine_wave(440.0, audio::SAMPLING_RATE, 0.2, audio::SAMPLING_RATE),
+            data: samples,
             is_repeating: true,
             position: 0,
         },
