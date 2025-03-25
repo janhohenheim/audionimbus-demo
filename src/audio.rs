@@ -10,6 +10,8 @@ pub const SAMPLING_RATE: usize = 48000;
 pub const NUM_CHANNELS: usize = 2;
 pub const AMBISONICS_ORDER: usize = 2;
 pub const AMBISONICS_NUM_CHANNELS: usize = (AMBISONICS_ORDER + 1).pow(2);
+pub const GAIN_FACTOR_DIRECT: f32 = 1.0;
+pub const GAIN_FACTOR_REFLECTIONS: f32 = 0.3;
 
 #[derive(Resource)]
 pub struct Audio {
@@ -19,6 +21,7 @@ pub struct Audio {
     pub simulator: audionimbus::Simulator,
     pub hrtf: audionimbus::Hrtf,
     pub direct_effect: audionimbus::DirectEffect,
+    pub reflection_effect: audionimbus::ReflectionEffect,
     pub ambisonics_encode_effect: audionimbus::AmbisonicsEncodeEffect,
     pub ambisonics_decode_effect: audionimbus::AmbisonicsDecodeEffect,
     pub sink: Sink,
@@ -133,9 +136,8 @@ impl Plugin {
             ),
         };
 
-        let simulation_flags = audionimbus::SimulationFlags::DIRECT
-            | audionimbus::SimulationFlags::REFLECTIONS
-            | audionimbus::SimulationFlags::PATHING;
+        let simulation_flags =
+            audionimbus::SimulationFlags::DIRECT | audionimbus::SimulationFlags::REFLECTIONS;
         audio.simulator.set_shared_inputs(
             simulation_flags,
             &audionimbus::SimulationSharedInputs {
@@ -234,6 +236,7 @@ impl Plugin {
 
                 let simulation_outputs = audio_source.source.get_outputs(simulation_flags);
                 let direct_effect_params = simulation_outputs.direct();
+                let reflection_effect_params = simulation_outputs.reflections();
 
                 let input_buffer = audionimbus::AudioBuffer::try_with_data(&frame).unwrap();
 
@@ -269,6 +272,43 @@ impl Plugin {
                     &ambisonics_encode_buffer,
                 );
 
+                let mut reflection_container = vec![0.0; FRAME_SIZE * AMBISONICS_NUM_CHANNELS];
+                let reflection_buffer = audionimbus::AudioBuffer::try_with_data_and_settings(
+                    &mut reflection_container,
+                    &audionimbus::AudioBufferSettings {
+                        num_channels: Some(AMBISONICS_NUM_CHANNELS),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+                let _effect_state = audio.reflection_effect.apply(
+                    &reflection_effect_params,
+                    &input_buffer,
+                    &reflection_buffer,
+                );
+
+                let mut mix_container = ambisonics_encode_buffer
+                    .channels()
+                    .zip(reflection_buffer.channels())
+                    .flat_map(|(direct_channel, reflection_channel)| {
+                        direct_channel.iter().zip(reflection_channel.iter()).map(
+                            |(direct_sample, reflections_sample)| {
+                                (direct_sample * GAIN_FACTOR_DIRECT
+                                    + reflections_sample * GAIN_FACTOR_REFLECTIONS)
+                                    / 2.0
+                            },
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                let mix_buffer = audionimbus::AudioBuffer::try_with_data_and_settings(
+                    &mut mix_container,
+                    &audionimbus::AudioBufferSettings {
+                        num_channels: Some(AMBISONICS_NUM_CHANNELS),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+
                 let mut staging_container = vec![0.0; FRAME_SIZE * NUM_CHANNELS];
                 let staging_buffer = audionimbus::AudioBuffer::try_with_data_and_settings(
                     &mut staging_container,
@@ -287,7 +327,7 @@ impl Plugin {
                 };
                 let _effect_state = audio.ambisonics_decode_effect.apply(
                     &ambisonics_decode_effect_params,
-                    &ambisonics_encode_buffer,
+                    &mix_buffer,
                     &staging_buffer,
                 );
 
@@ -329,8 +369,55 @@ impl bevy::app::Plugin for Plugin {
             sampling_rate: SAMPLING_RATE,
         };
 
-        let scene =
+        let mut scene =
             audionimbus::Scene::try_new(&context, &audionimbus::SceneSettings::default()).unwrap();
+
+        let walls = audionimbus::StaticMesh::try_new(
+            &scene,
+            &audionimbus::StaticMeshSettings {
+                vertices: &[
+                    // Floor
+                    audionimbus::Point::new(-2.0, 0.0, -2.0),
+                    audionimbus::Point::new(2.0, 0.0, -2.0),
+                    audionimbus::Point::new(2.0, 0.0, 2.0),
+                    audionimbus::Point::new(-2.0, 0.0, 2.0),
+                    // Ceiling
+                    audionimbus::Point::new(-2.0, 4.0, -2.0),
+                    audionimbus::Point::new(2.0, 4.0, -2.0),
+                    audionimbus::Point::new(2.0, 4.0, 2.0),
+                    audionimbus::Point::new(-2.0, 4.0, 2.0),
+                    // Back wall
+                    audionimbus::Point::new(-2.0, 0.0, -2.0),
+                    audionimbus::Point::new(2.0, 0.0, -2.0),
+                    audionimbus::Point::new(2.0, 4.0, -2.0),
+                    audionimbus::Point::new(-2.0, 4.0, -2.0),
+                    // Left wall
+                    audionimbus::Point::new(-2.0, 0.0, -2.0),
+                    audionimbus::Point::new(-2.0, 0.0, 2.0),
+                    audionimbus::Point::new(-2.0, 4.0, 2.0),
+                    audionimbus::Point::new(-2.0, 4.0, -2.0),
+                ],
+                triangles: &[
+                    // Floor
+                    audionimbus::Triangle::new(0, 1, 2),
+                    audionimbus::Triangle::new(0, 2, 3),
+                    // Ceiling
+                    audionimbus::Triangle::new(4, 6, 5),
+                    audionimbus::Triangle::new(4, 7, 6),
+                    // Back wall
+                    audionimbus::Triangle::new(8, 9, 10),
+                    audionimbus::Triangle::new(8, 10, 11),
+                    // Left wall
+                    audionimbus::Triangle::new(12, 14, 13),
+                    audionimbus::Triangle::new(12, 15, 14),
+                ],
+                material_indices: &[0, 0, 0, 0, 0, 0, 0, 0],
+                materials: &[audionimbus::Material::WOOD],
+            },
+        )
+        .unwrap();
+        scene.add_static_mesh(&walls);
+        scene.commit();
 
         let simulation_settings = audionimbus::SimulationSettings {
             scene_params: audionimbus::SceneParams::Default,
@@ -338,16 +425,14 @@ impl bevy::app::Plugin for Plugin {
                 max_num_occlusion_samples: 16,
             }),
             reflections_simulation: Some(audionimbus::ReflectionsSimulationSettings::Convolution {
-                max_num_rays: 4096,
+                max_num_rays: 8192,
                 num_diffuse_samples: 32,
                 max_duration: 2.0,
                 max_order: AMBISONICS_ORDER,
                 max_num_sources: 8,
                 num_threads: 1,
             }),
-            pathing_simulation: Some(audionimbus::PathingSimulationSettings {
-                num_visibility_samples: 16,
-            }),
+            pathing_simulation: None,
             sampling_rate: SAMPLING_RATE,
             frame_size: FRAME_SIZE,
         };
@@ -369,6 +454,16 @@ impl bevy::app::Plugin for Plugin {
             &context,
             &settings,
             &audionimbus::DirectEffectSettings { num_channels: 1 },
+        )
+        .unwrap();
+
+        let reflection_effect = audionimbus::ReflectionEffect::try_new(
+            &context,
+            &settings,
+            &audionimbus::ReflectionEffectSettings::Convolution {
+                impulse_response_size: 2 * SAMPLING_RATE,
+                num_channels: AMBISONICS_NUM_CHANNELS,
+            },
         )
         .unwrap();
 
@@ -399,6 +494,7 @@ impl bevy::app::Plugin for Plugin {
             simulator,
             hrtf,
             direct_effect,
+            reflection_effect,
             ambisonics_encode_effect,
             ambisonics_decode_effect,
             sink,

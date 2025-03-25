@@ -31,7 +31,7 @@ fn main() {
     .add_plugins(character::Plugin)
     .add_plugins(audio::Plugin)
     .add_plugins(orbit::Plugin)
-    .add_systems(Startup, setup);
+    .add_systems(PostStartup, setup);
 
     app.run();
 }
@@ -42,6 +42,7 @@ fn setup(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut audio: ResMut<audio::Audio>,
 ) {
+    /*
     let cuboid = meshes.add(Cuboid::default());
     let cuboid_material = materials.add(StandardMaterial {
         emissive: LinearRgba {
@@ -57,6 +58,7 @@ fn setup(
         MeshMaterial3d(cuboid_material),
         Transform::from_xyz(0.0, 2.0, 0.0),
     ));
+    */
 
     let sphere = meshes.add(Sphere { radius: 0.1 });
     let sphere_material = materials.add(StandardMaterial {
@@ -68,10 +70,9 @@ fn setup(
         },
         ..default()
     });
-    let simulation_flags = audionimbus::SimulationFlags::DIRECT
-        | audionimbus::SimulationFlags::REFLECTIONS
-        | audionimbus::SimulationFlags::PATHING;
-    let mut source = audionimbus::Source::try_new(
+    let simulation_flags =
+        audionimbus::SimulationFlags::DIRECT | audionimbus::SimulationFlags::REFLECTIONS;
+    let source = audionimbus::Source::try_new(
         &audio.simulator,
         &audionimbus::SourceSettings {
             flags: simulation_flags,
@@ -83,7 +84,7 @@ fn setup(
     commands.spawn((
         Mesh3d(sphere),
         MeshMaterial3d(sphere_material),
-        Transform::default(),
+        Transform::from_xyz(0.0, 2.0, 0.0),
         audio::AudioSource {
             source,
             data: audio::sine_wave(440.0, audio::SAMPLING_RATE, 0.2, audio::SAMPLING_RATE),
@@ -102,8 +103,68 @@ fn setup(
 
     // Ground
     commands.spawn((
-        Mesh3d(meshes.add(Plane3d::default().mesh().size(50.0, 50.0).subdivisions(10))),
-        MeshMaterial3d(materials.add(Color::from(bevy::color::palettes::basic::SILVER))),
+        Mesh3d(meshes.add(Plane3d::default().mesh().size(4.0, 4.0).subdivisions(10))),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color: Color::Srgba(bevy::color::palettes::basic::SILVER),
+            cull_mode: None,
+            ..default()
+        })),
+    ));
+
+    // Ceiling
+    commands.spawn((
+        Mesh3d(
+            meshes.add(
+                Plane3d {
+                    normal: -Dir3::Y,
+                    ..Default::default()
+                }
+                .mesh()
+                .size(4.0, 4.0)
+                .subdivisions(10),
+            ),
+        ),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color: Color::Srgba(bevy::color::palettes::basic::SILVER),
+            cull_mode: None,
+            ..default()
+        })),
+        Transform::from_xyz(0.0, 4.0, 0.0),
+    ));
+
+    commands.insert_resource(AmbientLight {
+        brightness: 200.0,
+        ..Default::default()
+    });
+
+    // Back wall
+    commands.spawn((
+        Mesh3d(meshes.add(Plane3d::default().mesh().size(4.0, 4.0).subdivisions(10))),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color: Color::Srgba(bevy::color::palettes::basic::SILVER),
+            cull_mode: None,
+            ..default()
+        })),
+        Transform {
+            translation: [0.0, 2.0, -2.0].into(),
+            rotation: Quat::from_rotation_x(std::f32::consts::FRAC_PI_2),
+            ..Default::default()
+        },
+    ));
+
+    // Left wall
+    commands.spawn((
+        Mesh3d(meshes.add(Plane3d::default().mesh().size(4.0, 4.0).subdivisions(10))),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color: Color::Srgba(bevy::color::palettes::basic::SILVER),
+            cull_mode: None,
+            ..default()
+        })),
+        Transform {
+            translation: [-2.0, 2.0, 0.0].into(),
+            rotation: Quat::from_rotation_z(-std::f32::consts::FRAC_PI_2),
+            ..Default::default()
+        },
     ));
 
     commands.insert_resource(AmbientLight {
