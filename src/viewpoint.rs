@@ -27,11 +27,11 @@ impl Plugin {
 
         for mut viewpoint in query_characters.iter_mut() {
             viewpoint.yaw = f32::rem_euclid(
-                viewpoint.yaw + -mouse_motion_delta.0.x / 1000.0,
+                viewpoint.yaw + -mouse_motion_delta.0.x / 800.0,
                 2.0 * std::f32::consts::PI,
             );
             viewpoint.pitch = f32::clamp(
-                viewpoint.pitch + -mouse_motion_delta.0.y / 1000.0,
+                viewpoint.pitch + -mouse_motion_delta.0.y / 800.0,
                 -std::f32::consts::FRAC_PI_2,
                 std::f32::consts::FRAC_PI_2,
             );

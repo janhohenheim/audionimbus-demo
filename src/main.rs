@@ -67,7 +67,7 @@ fn setup(
         emissive: LinearRgba {
             red: 0.0,
             green: 0.0,
-            blue: 200.0,
+            blue: 1000.0,
             alpha: 1.0,
         },
         ..default()
@@ -105,20 +105,18 @@ fn setup(
         Mesh3d(sphere.clone()),
         MeshMaterial3d(sphere_material.clone()),
         Transform::from_xyz(0.0, 2.0, 0.0),
+        audio::AudioSource {
+            source: cathedral_source,
+            data: samples,
+            is_repeating: true,
+            position: 0,
+        },
         /*
         audio::AudioSource {
             source,
             data: samples.clone(),
             is_repeating: true,
             position: 0,
-        },
-        */
-        /*
-        orbit::Orbit {
-            center: Vec3::new(0.0, 2.0, 0.0),
-            radius: 3.0,
-            angle: 0.0,
-            speed: std::f32::consts::PI * 2.0,
         },
         */
     ));
@@ -139,12 +137,6 @@ fn setup(
         Mesh3d(sphere),
         MeshMaterial3d(sphere_material),
         Transform::from_xyz(28.0, 10.0, -8.0),
-        audio::AudioSource {
-            source: cathedral_source,
-            data: samples,
-            is_repeating: true,
-            position: 0,
-        },
     ));
     commands.spawn((
         Transform::from_xyz(28.0, 10.0, -8.0),
