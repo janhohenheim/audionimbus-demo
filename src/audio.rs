@@ -176,8 +176,8 @@ impl Plugin {
             simulation_flags,
             &audionimbus::SimulationSharedInputs {
                 listener: listener_orientation,
-                num_rays: 8192,
-                num_bounces: 32,
+                num_rays: 2048,
+                num_bounces: 16,
                 duration: 2.0,
                 order: AMBISONICS_ORDER,
                 irradiance_min_distance: 1.0,
@@ -488,8 +488,8 @@ impl bevy::app::Plugin for Plugin {
                 max_num_occlusion_samples: 16,
             }),
             reflections_simulation: Some(audionimbus::ReflectionsSimulationSettings::Convolution {
-                max_num_rays: 8192,
-                num_diffuse_samples: 32,
+                max_num_rays: 2048,
+                num_diffuse_samples: 16,
                 max_duration: 2.0,
                 max_order: AMBISONICS_ORDER,
                 max_num_sources: 8,
