@@ -20,6 +20,7 @@ fn main() {
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
             title: "audionimbus".to_string(),
+            mode: bevy::window::WindowMode::BorderlessFullscreen(MonitorSelection::Primary),
             ..Default::default()
         }),
         ..Default::default()
