@@ -14,3 +14,7 @@ bevy = "0.15.3"
 bevy_rapier3d = "0.29.0"
 itertools = "0.14.0"
 rodio = "0.20.1"
+
+[features]
+direct = []
+reverb = []

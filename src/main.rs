@@ -44,24 +44,6 @@ fn setup(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut audio: ResMut<audio::Audio>,
 ) {
-    /*
-    let cuboid = meshes.add(Cuboid::default());
-    let cuboid_material = materials.add(StandardMaterial {
-        emissive: LinearRgba {
-            red: 300.0,
-            green: 100.0,
-            blue: 0.0,
-            alpha: 1.0,
-        },
-        ..default()
-    });
-    commands.spawn((
-        Mesh3d(cuboid),
-        MeshMaterial3d(cuboid_material),
-        Transform::from_xyz(0.0, 2.0, 0.0),
-    ));
-    */
-
     let sphere = meshes.add(Sphere { radius: 0.1 });
     let sphere_material = materials.add(StandardMaterial {
         emissive: LinearRgba {
@@ -82,15 +64,21 @@ fn setup(
     )
     .unwrap();
     audio.simulator.add_source(&source);
-    let cathedral_source = audionimbus::Source::try_new(
+    let source = audionimbus::Source::try_new(
         &audio.simulator,
         &audionimbus::SourceSettings {
             flags: simulation_flags,
         },
     )
     .unwrap();
-    audio.simulator.add_source(&cathedral_source);
+    audio.simulator.add_source(&source);
     audio.simulator.commit();
+
+    let mut spawn_position = Vec3::new(0.0, 0.0, 10.0);
+    let mut viewpoint = viewpoint::Viewpoint {
+        translation: Vec3::new(0.0, 2.0, 0.0),
+        ..Default::default()
+    };
 
     let assets = std::path::Path::new(env!("OUT_DIR")).join("assets");
     let file = std::fs::File::open(assets.join("piano.raw")).unwrap();
@@ -101,55 +89,113 @@ fn setup(
         let sample = f32::from_le_bytes(buffer);
         samples.push(sample);
     }
-    commands.spawn((
-        Mesh3d(sphere.clone()),
-        MeshMaterial3d(sphere_material.clone()),
-        Transform::from_xyz(0.0, 2.0, 0.0),
-        audio::AudioSource {
-            source: cathedral_source,
-            data: samples,
-            is_repeating: true,
-            position: 0,
-        },
-        /*
-        audio::AudioSource {
-            source,
-            data: samples.clone(),
-            is_repeating: true,
-            position: 0,
-        },
-        */
-    ));
-    commands.spawn((
-        Transform::from_xyz(0.0, 2.0, 0.0),
-        PointLight {
-            color: Color::Srgba(Srgba {
-                red: 0.8,
-                green: 0.8,
-                blue: 1.0,
-                alpha: 1.0,
-            }),
-            ..Default::default()
-        },
-    ));
 
-    commands.spawn((
-        Mesh3d(sphere),
-        MeshMaterial3d(sphere_material),
-        Transform::from_xyz(28.0, 10.0, -8.0),
-    ));
-    commands.spawn((
-        Transform::from_xyz(28.0, 10.0, -8.0),
-        PointLight {
-            color: Color::Srgba(Srgba {
-                red: 0.8,
-                green: 0.8,
-                blue: 1.0,
-                alpha: 1.0,
-            }),
+    #[cfg(not(any(feature = "direct", feature = "reverb")))]
+    {
+        let source_position = Transform::from_xyz(0.0, 2.0, 0.0);
+        commands.spawn((
+            Mesh3d(sphere.clone()),
+            MeshMaterial3d(sphere_material.clone()),
+            source_position,
+            audio::AudioSource {
+                source,
+                data: samples,
+                is_repeating: true,
+                position: 0,
+            },
+        ));
+        commands.spawn((
+            source_position,
+            PointLight {
+                color: Color::Srgba(Srgba {
+                    red: 0.8,
+                    green: 0.8,
+                    blue: 1.0,
+                    alpha: 1.0,
+                }),
+                ..Default::default()
+            },
+        ));
+
+        commands.spawn((
+            Transform::from_xyz(28.0, 10.0, -8.0),
+            PointLight {
+                intensity: 5000000.0,
+                color: Color::Srgba(Srgba {
+                    red: 0.8,
+                    green: 0.8,
+                    blue: 1.0,
+                    alpha: 1.0,
+                }),
+                ..Default::default()
+            },
+        ));
+    }
+    #[cfg(feature = "direct")]
+    {
+        let source_position = Transform::from_xyz(0.0, 2.0, 0.0);
+        commands.spawn((
+            Mesh3d(sphere.clone()),
+            MeshMaterial3d(sphere_material.clone()),
+            source_position,
+            audio::AudioSource {
+                source,
+                data: samples,
+                is_repeating: true,
+                position: 0,
+            },
+        ));
+        commands.spawn((
+            source_position,
+            PointLight {
+                intensity: 500000.0,
+                color: Color::Srgba(Srgba {
+                    red: 0.8,
+                    green: 0.8,
+                    blue: 1.0,
+                    alpha: 1.0,
+                }),
+                ..Default::default()
+            },
+        ));
+
+        spawn_position = Vec3::new(0.0, 0.0, 15.0);
+    }
+    #[cfg(feature = "reverb")]
+    {
+        let source_position = Transform::from_xyz(0.0, 8.0, -10.0);
+        commands.spawn((
+            Mesh3d(sphere.clone()),
+            MeshMaterial3d(sphere_material.clone()),
+            source_position,
+            audio::AudioSource {
+                source,
+                data: samples,
+                is_repeating: true,
+                position: 0,
+            },
+        ));
+        commands.spawn((
+            source_position,
+            PointLight {
+                intensity: 30000000.0,
+                color: Color::Srgba(Srgba {
+                    red: 0.8,
+                    green: 0.8,
+                    blue: 1.0,
+                    alpha: 1.0,
+                }),
+                ..Default::default()
+            },
+        ));
+
+        spawn_position = Vec3::new(0.0, 0.0, 15.0);
+        viewpoint = viewpoint::Viewpoint {
+            translation: Vec3::new(0.0, 2.0, 0.0),
+            pitch: 0.2,
             ..Default::default()
-        },
-    ));
+        };
+    }
 
     for (vertices, normal) in TOPOLOGY {
         let normal = [normal[1], normal[2], normal[0]];
@@ -209,19 +255,14 @@ fn setup(
 
     commands
         .spawn(character::Character {
-            viewpoint: viewpoint::Viewpoint {
-                translation: bevy::math::Vec3::new(0.0, 2.0, 0.0),
-                ..Default::default()
-            },
+            viewpoint,
             rigid_body: bevy_rapier3d::dynamics::RigidBody::KinematicPositionBased,
             collider: bevy_rapier3d::geometry::Collider::compound(vec![(
                 Vec3::new(0.0, 1.0, 0.0),
                 Quat::IDENTITY,
                 bevy_rapier3d::geometry::Collider::cylinder(1.0, 0.5),
             )]),
-            transform: bevy::transform::components::Transform::from_translation(
-                bevy::math::Vec3::new(0.0, 0.0, 10.0),
-            ),
+            transform: bevy::transform::components::Transform::from_translation(spawn_position),
             ..Default::default()
         })
         .with_child((
@@ -237,6 +278,7 @@ fn setup(
 }
 
 // Blender vertex coordinates
+#[cfg(not(any(feature = "direct", feature = "reverb")))]
 const TOPOLOGY: [([[f32; 3]; 4], [f32; 3]); 23] = [
     (
         [
@@ -465,6 +507,112 @@ const TOPOLOGY: [([[f32; 3]; 4], [f32; 3]); 23] = [
             [2.0, 38.0, 0.0],
             [2.0, 38.0, 20.0],
             [2.0, 6.0, 20.0],
+        ],
+        [-1.0, 0.0, 0.0],
+    ),
+];
+#[cfg(feature = "direct")]
+const TOPOLOGY: [([[f32; 3]; 4], [f32; 3]); 4] = [
+    (
+        [
+            // Floor
+            [2.0, -2.0, 0.0],
+            [2.0, 2.0, 0.0],
+            [-2.0, 2.0, 0.0],
+            [-2.0, -2.0, 0.0],
+        ],
+        [0.0, 0.0, -1.0],
+    ),
+    (
+        [
+            // Ceiling
+            [2.0, -2.0, 4.0],
+            [2.0, 2.0, 4.0],
+            [-2.0, 2.0, 4.0],
+            [-2.0, -2.0, 4.0],
+        ],
+        [0.0, 0.0, -1.0],
+    ),
+    (
+        [
+            // Left wall
+            [-2.0, -2.0, 0.0],
+            [2.0, -2.0, 0.0],
+            [2.0, -2.0, 4.0],
+            [-2.0, -2.0, 4.0],
+        ],
+        [0.0, 1.0, 0.0],
+    ),
+    (
+        [
+            // Front wall
+            [-2.0, -2.0, 0.0],
+            [-2.0, 2.0, 0.0],
+            [-2.0, 2.0, 4.0],
+            [-2.0, -2.0, 4.0],
+        ],
+        [-1.0, 0.0, 0.0],
+    ),
+];
+#[cfg(feature = "reverb")]
+const TOPOLOGY: [([[f32; 3]; 4], [f32; 3]); 6] = [
+    (
+        [
+            // Cathedral floor
+            [20.0, -10.0, 0.0],
+            [20.0, 10.0, 0.0],
+            [-20.0, 10.0, 0.0],
+            [-20.0, -10.0, 0.0],
+        ],
+        [0.0, 0.0, -1.0],
+    ),
+    (
+        [
+            // Cathedral ceiling
+            [20.0, -10.0, 20.0],
+            [20.0, 10.0, 20.0],
+            [-20.0, 10.0, 20.0],
+            [-20.0, -10.0, 20.0],
+        ],
+        [0.0, 0.0, -1.0],
+    ),
+    (
+        [
+            // Cathedral left wall
+            [-20.0, -10.0, 0.0],
+            [20.0, -10.0, 0.0],
+            [20.0, -10.0, 20.0],
+            [-20.0, -10.0, 20.0],
+        ],
+        [0.0, 1.0, 0.0],
+    ),
+    (
+        [
+            // Cathedral right wall
+            [20.0, 10.0, 0.0],
+            [-20.0, 10.0, 0.0],
+            [-20.0, 10.0, 20.0],
+            [20.0, 10.0, 20.0],
+        ],
+        [0.0, -1.0, 0.0],
+    ),
+    (
+        [
+            // Cathedral front wall
+            [-20.0, 10.0, 0.0],
+            [-20.0, -10.0, 0.0],
+            [-20.0, -10.0, 20.0],
+            [-20.0, 10.0, 20.0],
+        ],
+        [1.0, 0.0, 0.0],
+    ),
+    (
+        [
+            // Cathedral back wall
+            [20.0, -10.0, 0.0],
+            [20.0, 10.0, 0.0],
+            [20.0, 10.0, 20.0],
+            [20.0, -10.0, 20.0],
         ],
         [-1.0, 0.0, 0.0],
     ),
