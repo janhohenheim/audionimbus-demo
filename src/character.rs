@@ -43,7 +43,7 @@ impl std::default::Default for Kinematics {
         Self {
             acceleration: Vec3::default(),
             velocity: Vec3::default(),
-            ground_speed: 7.0,
+            ground_speed: 3.0,
             action: Action {
                 forward: 0.0,
                 strafe: 0.0,
