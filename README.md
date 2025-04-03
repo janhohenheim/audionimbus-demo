@@ -4,6 +4,8 @@ Experience immersive spatial audio through this interactive demo of [`audionimbu
 
 Walk through three distinct acoustic environments, each showcasing various spatial audio features of `audionimbus`.
 
+You can also watch the [walkthrough video](https://www.youtube.com/watch?v=zlhW1maG0Is).
+
 ![Screenshot](./docs/screenshot.png)
 
 ## Prerequisites
