@@ -1,10 +1,8 @@
+use std::time::Duration;
+
 use bevy::prelude::*;
-use bevy::utils::Duration;
 use itertools::izip;
 use rodio::{OutputStream, Sink, Source};
-
-use super::character::CharacterMarker;
-use super::viewpoint::Viewpoint;
 
 pub const FRAME_SIZE: usize = 1024;
 pub const SAMPLING_RATE: usize = 48000;
@@ -18,9 +16,9 @@ pub const GAIN_FACTOR_REVERB: f32 = 0.1;
 #[derive(Resource)]
 pub struct Audio {
     pub context: audionimbus::Context,
-    pub settings: audionimbus::AudioSettings,
+
     pub scene: audionimbus::Scene,
-    pub simulator: audionimbus::Simulator,
+    pub simulator: audionimbus::Simulator<audionimbus::Direct, audionimbus::Reflections>,
     pub hrtf: audionimbus::Hrtf,
     pub direct_effect: audionimbus::DirectEffect,
     pub reflection_effect: audionimbus::ReflectionEffect,
@@ -101,7 +99,7 @@ pub struct Plugin;
 impl Plugin {
     fn process_frame(
         mut commands: Commands,
-        query_character: Query<(&GlobalTransform, &Viewpoint), With<CharacterMarker>>,
+        query_character: Single<&GlobalTransform, With<Camera3d>>,
         mut query_audio_sources: Query<(Entity, &GlobalTransform, &mut AudioSource)>,
         time: Res<Time>,
         mut audio: ResMut<Audio>,
@@ -109,12 +107,12 @@ impl Plugin {
     ) {
         audio.timer.tick(time.delta());
 
-        let (global_transform, viewpoint) = query_character.single();
-        let listener_position = global_transform.translation() + viewpoint.translation;
+        let transform = query_character.into_inner().compute_transform();
+        let listener_position = transform.translation;
 
-        let listener_orientation_right = viewpoint.rotation * Vec3::X;
-        let listener_orientation_up = viewpoint.rotation * Vec3::Y;
-        let listener_orientation_ahead = viewpoint.rotation * -Vec3::Z;
+        let listener_orientation_right = transform.right();
+        let listener_orientation_up = transform.up();
+        let listener_orientation_ahead = transform.forward();
         let listener_orientation = audionimbus::CoordinateSystem {
             right: audionimbus::Vector3::new(
                 listener_orientation_right.x,
@@ -482,24 +480,24 @@ impl bevy::app::Plugin for Plugin {
         scene.add_static_mesh(&walls);
         scene.commit();
 
-        let simulation_settings = audionimbus::SimulationSettings {
-            scene_params: audionimbus::SceneParams::Default,
-            direct_simulation: Some(audionimbus::DirectSimulationSettings {
-                max_num_occlusion_samples: 16,
-            }),
-            reflections_simulation: Some(audionimbus::ReflectionsSimulationSettings::Convolution {
-                max_num_rays: 2048,
-                num_diffuse_samples: 8,
-                max_duration: 2.0,
-                max_order: AMBISONICS_ORDER,
-                max_num_sources: 8,
-                num_threads: 1,
-            }),
-            pathing_simulation: None,
-            sampling_rate: SAMPLING_RATE,
-            frame_size: FRAME_SIZE,
-        };
-        let mut simulator = audionimbus::Simulator::try_new(&context, simulation_settings).unwrap();
+        let mut simulator = audionimbus::Simulator::builder(
+            audionimbus::SceneParams::Default,
+            SAMPLING_RATE,
+            FRAME_SIZE,
+        )
+        .with_direct(audionimbus::DirectSimulationSettings {
+            max_num_occlusion_samples: 16,
+        })
+        .with_reflections(audionimbus::ReflectionsSimulationSettings::Convolution {
+            max_num_rays: 2048,
+            num_diffuse_samples: 8,
+            max_duration: 2.0,
+            max_order: AMBISONICS_ORDER,
+            max_num_sources: 8,
+            num_threads: 1,
+        })
+        .try_build(&context)
+        .unwrap();
         simulator.set_scene(&scene);
         // Listener source used for reverb.
         let listener_source = audionimbus::Source::try_new(
@@ -574,7 +572,6 @@ impl bevy::app::Plugin for Plugin {
 
         app.insert_resource(Audio {
             context,
-            settings,
             scene,
             simulator,
             hrtf,
@@ -592,21 +589,4 @@ impl bevy::app::Plugin for Plugin {
 
         app.add_systems(PostUpdate, Self::process_frame);
     }
-}
-
-pub fn sine_wave(
-    frequency: f32,
-    sample_rate: usize,
-    amplitude: f32,
-    num_samples: usize,
-) -> Vec<audionimbus::Sample> {
-    let mut phase: f32 = 0.0;
-    let phase_increment = 2.0 * std::f32::consts::PI * frequency / sample_rate as f32;
-    (0..num_samples)
-        .map(|_| {
-            let sample = amplitude * phase.sin();
-            phase = (phase + phase_increment) % (2.0 * std::f32::consts::PI);
-            sample
-        })
-        .collect()
 }
