@@ -18,7 +18,8 @@ pub struct Audio {
     pub context: audionimbus::Context,
 
     pub scene: audionimbus::Scene,
-    pub simulator: audionimbus::Simulator<audionimbus::Direct, audionimbus::Reflections>,
+    pub simulator:
+        audionimbus::Simulator<audionimbus::Direct, audionimbus::Reflections, audionimbus::Pathing>,
     pub hrtf: audionimbus::Hrtf,
     pub direct_effect: audionimbus::DirectEffect,
     pub reflection_effect: audionimbus::ReflectionEffect,
@@ -164,7 +165,16 @@ impl Plugin {
                         baked_data_identifier: None,
                     },
                 ),
-                pathing_simulation: None,
+                pathing_simulation: Some(audionimbus::PathingSimulationParameters {
+                    pathing_probes: todo!(),
+                    visibility_radius: todo!(),
+                    visibility_threshold: todo!(),
+                    visibility_range: todo!(),
+                    pathing_order: todo!(),
+                    enable_validation: todo!(),
+                    find_alternate_paths: todo!(),
+                    deviation: todo!(),
+                }),
             },
         );
 
@@ -267,13 +277,23 @@ impl Plugin {
                                 baked_data_identifier: None,
                             },
                         ),
-                        pathing_simulation: None,
+                        pathing_simulation: Some(audionimbus::PathingSimulationParameters {
+                            pathing_probes: todo!(),
+                            visibility_radius: todo!(),
+                            visibility_threshold: todo!(),
+                            visibility_range: todo!(),
+                            pathing_order: todo!(),
+                            enable_validation: todo!(),
+                            find_alternate_paths: todo!(),
+                            deviation: todo!(),
+                        }),
                     },
                 );
 
                 let simulation_outputs = audio_source.source.get_outputs(simulation_flags);
                 let direct_effect_params = simulation_outputs.direct();
                 let reflection_effect_params = simulation_outputs.reflections();
+                let pathing_effect_params = simulation_outputs.pathing();
 
                 let input_buffer = audionimbus::AudioBuffer::try_with_data(&frame).unwrap();
 
@@ -495,6 +515,9 @@ impl bevy::app::Plugin for Plugin {
             max_order: AMBISONICS_ORDER,
             max_num_sources: 8,
             num_threads: 1,
+        })
+        .with_pathing(audionimbus::PathingSimulationSettings {
+            num_visibility_samples: 8,
         })
         .try_build(&context)
         .unwrap();

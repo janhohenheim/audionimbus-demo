@@ -44,8 +44,9 @@ fn setup(
         },
         ..default()
     });
-    let simulation_flags =
-        audionimbus::SimulationFlags::DIRECT | audionimbus::SimulationFlags::REFLECTIONS;
+    let simulation_flags = audionimbus::SimulationFlags::DIRECT
+        | audionimbus::SimulationFlags::REFLECTIONS
+        | audionimbus::SimulationFlags::PATHING;
     let source = audionimbus::Source::try_new(
         &audio.simulator,
         &audionimbus::SourceSettings {
