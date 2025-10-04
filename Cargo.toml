@@ -9,10 +9,62 @@ repository = "https://github.com/MaxenceMaire/audionimbus-demo"
 readme = "README.md"
 
 [dependencies]
-audionimbus = { version = "0.8", features = ["auto-install"]  }
-bevy = "0.17"
+audionimbus = "0.8"
+bevy_seedling = "0.6.0-rc.1"
+bevy = { version = "0.17.0-rc.1", default-features = false, features = [
+  "std",
+  "async_executor",
+  "android-game-activity",
+  "android_shared_stdcxx",
+  "animation",
+  "bevy_asset",
+  "bevy_color",
+  "bevy_core_pipeline",
+  "bevy_post_process",
+  "bevy_anti_alias",
+  "bevy_gilrs",
+  "bevy_gizmos",
+  "bevy_gltf",
+  "bevy_input_focus",
+  "bevy_log",
+  "bevy_mesh_picking_backend",
+  "bevy_pbr",
+  "bevy_picking",
+  "bevy_render",
+  "bevy_scene",
+  "bevy_image",
+  "bevy_mesh",
+  "bevy_camera",
+  "bevy_light",
+  "bevy_shader",
+  "bevy_sprite",
+  "bevy_sprite_picking_backend",
+  "bevy_sprite_render",
+  "bevy_state",
+  "bevy_text",
+  "bevy_ui",
+  "bevy_ui_picking_backend",
+  "bevy_ui_render",
+  "bevy_window",
+  "bevy_winit",
+  "custom_cursor",
+  "default_font",
+  "hdr",
+  "ktx2",
+  "multi_threaded",
+  "png",
+  "reflect_auto_register",
+  "smaa_luts",
+  "sysinfo_plugin",
+  "tonemapping_luts",
+  "webgl2",
+  "x11",
+  "wayland",
+  "debug",
+  "zstd_rust",
+] }
 itertools = "0.14.0"
-rodio = "0.20.1"
+firewheel = "0.8.0-rc.1"
 
 [features]
 direct = []

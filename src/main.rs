@@ -6,6 +6,7 @@ use bevy::{
     post_process::bloom::Bloom,
     prelude::*,
 };
+use bevy_seedling::SeedlingPlugin;
 
 use crate::camera_controller::CameraController;
 
@@ -22,6 +23,7 @@ fn main() {
             }),
             ..Default::default()
         }))
+        .add_plugins(SeedlingPlugin::default())
         .add_plugins(audio::Plugin)
         .add_plugins(camera_controller::CameraControllerPlugin)
         .add_systems(Startup, setup)

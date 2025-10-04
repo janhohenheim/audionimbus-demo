@@ -1,8 +1,24 @@
-use std::time::Duration;
+use std::{
+    sync::{Arc, RwLock},
+    time::Duration,
+};
 
+use audionimbus::{SimulationInputs, SimulationSettings};
 use bevy::prelude::*;
+use bevy_seedling::{
+    firewheel::diff::{Diff, Patch},
+    prelude::ChannelCount,
+};
+use firewheel::{
+    channel_config::ChannelConfig,
+    diff::{EventQueue, PathBuilder},
+    event::ProcEvents,
+    node::{
+        AudioNode, AudioNodeInfo, AudioNodeProcessor, ConstructProcessorContext, EmptyConfig,
+        ProcBuffers, ProcExtra, ProcInfo, ProcessStatus,
+    },
+};
 use itertools::izip;
-use rodio::{OutputStream, Sink, Source};
 
 pub const FRAME_SIZE: usize = 1024;
 pub const SAMPLING_RATE: usize = 48000;
@@ -12,6 +28,136 @@ pub const AMBISONICS_NUM_CHANNELS: usize = (AMBISONICS_ORDER + 1).pow(2);
 pub const GAIN_FACTOR_DIRECT: f32 = 1.0;
 pub const GAIN_FACTOR_REFLECTIONS: f32 = 0.3;
 pub const GAIN_FACTOR_REVERB: f32 = 0.1;
+
+#[derive(Diff, Patch, Debug, Clone, Component)]
+pub struct AmbisonicNode {
+    // Note to self: need to manually write a simple version of `SimulationInputs` without void ptr garbage or lifetimes and derive Diff, Patch on it.
+    source_position: Vec3,
+    listener_position: Vec3,
+    ambisonics_encode_effect: audionimbus::AmbisonicsEncodeEffect,
+}
+
+impl AudioNode for AmbisonicNode {
+    type Configuration = EmptyConfig;
+
+    fn info(&self, config: &Self::Configuration) -> AudioNodeInfo {
+        AudioNodeInfo::new()
+            .debug_name("ambisonic processor")
+            // 1 -> 9
+            .channel_config(ChannelConfig {
+                num_inputs: ChannelCount::MONO,
+                num_outputs: ChannelCount::new(AMBISONICS_NUM_CHANNELS),
+            })
+    }
+
+    fn construct_processor(
+        &self,
+        _config: &Self::Configuration,
+        _cx: ConstructProcessorContext,
+    ) -> impl AudioNodeProcessor {
+        AmbisonicProcessor {
+            params: self.clone(),
+        }
+    }
+}
+
+struct AmbisonicProcessor {
+    params: AmbisonicNode,
+}
+
+impl AudioNodeProcessor for AmbisonicProcessor {
+    fn process(
+        &mut self,
+        proc_info: &ProcInfo,
+        ProcBuffers { inputs, outputs }: ProcBuffers,
+        events: &mut ProcEvents,
+        _: &mut ProcExtra,
+    ) -> ProcessStatus {
+        for patch in events.drain_patches::<AmbisonicNode>() {
+            self.params.apply(patch);
+        }
+
+        // Firewheel will inform you if an input channel is silent. If they're
+        // all silent, we can simply skip processing and save CPU time.
+        if proc_info.in_silence_mask.all_channels_silent(inputs.len()) {
+            // All inputs are silent.
+            return ProcessStatus::ClearAllOutputs;
+        }
+
+        let source_position = self.params.source_position;
+
+        audio_source.source.set_inputs(
+            simulation_flags,
+            audionimbus::SimulationInputs {
+                source: audionimbus::CoordinateSystem {
+                    origin: audionimbus::Vector3::new(
+                        source_position.x,
+                        source_position.y,
+                        source_position.z,
+                    ),
+                    ..Default::default()
+                },
+                direct_simulation: Some(audionimbus::DirectSimulationParameters {
+                    distance_attenuation: Some(audionimbus::DistanceAttenuationModel::Default),
+                    air_absorption: Some(audionimbus::AirAbsorptionModel::Default),
+                    directivity: Some(audionimbus::Directivity::default()),
+                    occlusion: Some(audionimbus::Occlusion {
+                        transmission: Some(audionimbus::TransmissionParameters {
+                            num_transmission_rays: 8,
+                        }),
+                        algorithm: audionimbus::OcclusionAlgorithm::Raycast,
+                    }),
+                }),
+                reflections_simulation: Some(
+                    audionimbus::ReflectionsSimulationParameters::Convolution {
+                        baked_data_identifier: None,
+                    },
+                ),
+                pathing_simulation: None,
+            },
+        );
+
+        let simulation_flags =
+            audionimbus::SimulationFlags::DIRECT | audionimbus::SimulationFlags::REFLECTIONS;
+        let simulation_outputs = audio_source.source.get_outputs(simulation_flags);
+        let direct_effect_params = simulation_outputs.direct();
+        let reflection_effect_params = simulation_outputs.reflections();
+
+        let input_buffer = audionimbus::AudioBuffer::try_with_data(inputs).unwrap();
+
+        let mut direct_container = vec![0.0; FRAME_SIZE];
+        let direct_buffer = audionimbus::AudioBuffer::try_with_data(&mut direct_container).unwrap();
+        let _effect_state =
+            audio
+                .direct_effectx
+                .apply(&direct_effect_params, &input_buffer, &direct_buffer);
+
+        let listener_position = self.params.listener_position;
+        let direction = source_position - listener_position;
+        let direction = audionimbus::Direction::new(direction.x, direction.y, direction.z);
+
+        let mut ambisonics_encode_container = vec![0.0; FRAME_SIZE * AMBISONICS_NUM_CHANNELS];
+        let ambisonics_encode_buffer = audionimbus::AudioBuffer::try_with_data_and_settings(
+            &mut ambisonics_encode_container,
+            &audionimbus::AudioBufferSettings {
+                num_channels: Some(AMBISONICS_NUM_CHANNELS),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let ambisonics_encode_effect_params = audionimbus::AmbisonicsEncodeEffectParams {
+            direction,
+            order: AMBISONICS_ORDER,
+        };
+        let _effect_state = audio.ambisonics_encode_effect.apply(
+            &ambisonics_encode_effect_params,
+            &direct_buffer,
+            &ambisonics_encode_buffer,
+        );
+
+        ProcessStatus::outputs_not_silent()
+    }
+}
 
 #[derive(Resource)]
 pub struct Audio {
