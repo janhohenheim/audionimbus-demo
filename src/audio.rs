@@ -110,13 +110,15 @@ impl AudioNodeProcessor for AmbisonicProcessor {
         let direct_effect_params = &outputs.direct;
         let reflection_effect_params = &outputs.reflections;
 
-        // TODO: don't allocate
-        let input_buffer = audionimbus::AudioBuffer::try_with_data(inputs).unwrap();
+        let mut channel_ptrs = [std::ptr::null_mut(); AMBISONICS_NUM_CHANNELS];
+        let input_buffer =
+            audionimbus::AudioBuffer::try_with_data(inputs, &mut channel_ptrs).unwrap();
 
-        // TODO: don't allocate
-        let mut direct_container = vec![0.0; FRAME_SIZE];
-        // TODO: don't allocate
-        let direct_buffer = audionimbus::AudioBuffer::try_with_data(&mut direct_container).unwrap();
+        let mut direct_container = [0.0; FRAME_SIZE];
+        let mut channel_ptrs = [std::ptr::null_mut(); 1];
+        let direct_buffer =
+            audionimbus::AudioBuffer::try_with_data(&mut direct_container, &mut channel_ptrs)
+                .unwrap();
         let _effect_state =
             self.direct_effect
                 .apply(&direct_effect_params, &input_buffer, &direct_buffer);
@@ -125,15 +127,16 @@ impl AudioNodeProcessor for AmbisonicProcessor {
         let direction = source_position - listener_position;
         let direction = audionimbus::Direction::new(direction.x, direction.y, direction.z);
 
-        // TODO: don't allocate
-        let mut ambisonics_encode_container = vec![0.0; FRAME_SIZE * AMBISONICS_NUM_CHANNELS];
-        // TODO: don't allocate
+        let mut ambisonics_encode_container = [0.0; FRAME_SIZE * AMBISONICS_NUM_CHANNELS];
+        let settings = audionimbus::AudioBufferSettings {
+            num_channels: Some(AMBISONICS_NUM_CHANNELS),
+            ..Default::default()
+        };
+        let mut channel_ptrs = [std::ptr::null_mut(); AMBISONICS_NUM_CHANNELS];
         let ambisonics_encode_buffer = audionimbus::AudioBuffer::try_with_data_and_settings(
             &mut ambisonics_encode_container,
-            &audionimbus::AudioBufferSettings {
-                num_channels: Some(AMBISONICS_NUM_CHANNELS),
-                ..Default::default()
-            },
+            &mut channel_ptrs,
+            settings,
         )
         .unwrap();
         let ambisonics_encode_effect_params = audionimbus::AmbisonicsEncodeEffectParams {
