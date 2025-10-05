@@ -3,6 +3,7 @@ use std::ops::Deref as _;
 use bevy::prelude::*;
 use bevy_seedling::{
     firewheel::diff::{Diff, Patch},
+    node::RegisterNode as _,
     prelude::ChannelCount,
 };
 use firewheel::{
@@ -496,6 +497,9 @@ impl Plugin {
 
 impl bevy::app::Plugin for Plugin {
     fn build(&self, app: &mut App) {
+        app.register_node::<AmbisonicNode>();
+        app.register_node::<AmbisonicDecodeNode>();
+
         let context =
             audionimbus::Context::try_new(&audionimbus::ContextSettings::default()).unwrap();
 
