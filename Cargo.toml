@@ -9,8 +9,8 @@ repository = "https://github.com/MaxenceMaire/audionimbus-demo"
 readme = "README.md"
 
 [dependencies]
-audionimbus = "0.8.3"
-audionimbus-sys = "4.7.1-rc.1"
+audionimbus = { version = "0.8.3", path = "../audionimbus/audionimbus" }
+audionimbus-sys = { version = "4.7.1-rc.1", path = "../audionimbus/audionimbus-sys" }
 bevy_seedling = "0.6.0-rc.1"
 bevy = { version = "0.17.0-rc.1", default-features = false, features = [
   "std",
@@ -66,6 +66,7 @@ bevy = { version = "0.17.0-rc.1", default-features = false, features = [
 ] }
 itertools = "0.14.0"
 firewheel = "0.8.0-rc.1"
+arrayvec = "0.7.6"
 
 [features]
 direct = []

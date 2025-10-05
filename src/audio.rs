@@ -1,9 +1,5 @@
-use std::{
-    sync::{Arc, RwLock},
-    time::Duration,
-};
+use std::{sync::Arc, time::Duration};
 
-use audionimbus::{SimulationInputs, SimulationSettings};
 use bevy::prelude::*;
 use bevy_seedling::{
     firewheel::diff::{Diff, Patch},
@@ -11,7 +7,6 @@ use bevy_seedling::{
 };
 use firewheel::{
     channel_config::ChannelConfig,
-    diff::{EventQueue, PathBuilder},
     event::ProcEvents,
     node::{
         AudioNode, AudioNodeInfo, AudioNodeProcessor, ConstructProcessorContext, EmptyConfig,
@@ -33,7 +28,6 @@ pub const GAIN_FACTOR_REVERB: f32 = 0.1;
 
 #[derive(Diff, Patch, Debug, Clone, Component)]
 pub struct AmbisonicNode {
-    // Note to self: need to manually write a simple version of `SimulationInputs` without void ptr garbage or lifetimes and derive Diff, Patch on it.
     source_position: Vec3,
     listener_position: Vec3,
     settings: AudionimbusAudioSettings,
@@ -107,10 +101,14 @@ impl AudioNodeProcessor for AmbisonicProcessor {
             return ProcessStatus::ClearAllOutputs;
         }
 
+        let Some(outputs) = self.outputs.as_ref() else {
+            return ProcessStatus::ClearAllOutputs;
+        };
+
         let source_position = self.params.source_position;
 
-        let direct_effect_params = &self.outputs.direct;
-        let reflection_effect_params = &self.outputs.reflections;
+        let direct_effect_params = &outputs.direct;
+        let reflection_effect_params = &outputs.reflections;
 
         // TODO: don't allocate
         let input_buffer = audionimbus::AudioBuffer::try_with_data(inputs).unwrap();
