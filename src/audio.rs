@@ -1,4 +1,4 @@
-use std::{ops::Deref as _, sync::Arc, time::Duration};
+use std::ops::Deref as _;
 
 use bevy::prelude::*;
 use bevy_seedling::{
@@ -28,13 +28,13 @@ pub const GAIN_FACTOR_REVERB: f32 = 0.1;
 
 #[derive(Diff, Patch, Debug, Clone, Component)]
 pub struct AmbisonicNode {
-    source_position: Vec3,
-    listener_position: Vec3,
-    settings: AudionimbusAudioSettings,
+    pub source_position: Vec3,
+    pub listener_position: Vec3,
+    pub settings: AudionimbusAudioSettings,
     #[diff(skip)]
-    context: audionimbus::Context,
-    simulation_outputs: Option<AudionimbusSimulationOutputs>,
-    reverb_effect_params: Option<AudionimbusReflectionEffectParams>,
+    pub context: audionimbus::Context,
+    pub simulation_outputs: Option<AudionimbusSimulationOutputs>,
+    pub reverb_effect_params: Option<AudionimbusReflectionEffectParams>,
 }
 
 impl AudioNode for AmbisonicNode {
@@ -238,11 +238,11 @@ impl AudioNodeProcessor for AmbisonicProcessor {
 
 #[derive(Diff, Patch, Debug, Clone, Component)]
 pub struct AmbisonicDecodeNode {
-    listener_orientation: AudionimbusCoordinateSystem,
+    pub listener_orientation: AudionimbusCoordinateSystem,
     #[diff(skip)]
-    hrtf: AudionimbusHrtf,
+    pub hrtf: AudionimbusHrtf,
     #[diff(skip)]
-    ambisonics_decode_effect: AudionimbusAmbisonicsDecodeEffect,
+    pub ambisonics_decode_effect: AudionimbusAmbisonicsDecodeEffect,
 }
 
 impl AudioNode for AmbisonicDecodeNode {
@@ -355,50 +355,7 @@ pub struct Audio {
     pub scene: audionimbus::Scene,
     pub simulator: audionimbus::Simulator<audionimbus::Direct, audionimbus::Reflections>,
     pub hrtf: audionimbus::Hrtf,
-    pub direct_effect: audionimbus::DirectEffect,
-    pub reflection_effect: audionimbus::ReflectionEffect,
-    pub reverb_effect: audionimbus::ReflectionEffect,
-    pub ambisonics_encode_effect: audionimbus::AmbisonicsEncodeEffect,
     pub ambisonics_decode_effect: audionimbus::AmbisonicsDecodeEffect,
-}
-
-pub struct AudioFrame {
-    position: usize,
-    data: Vec<f32>,
-    channels: u16,
-}
-
-impl AudioFrame {
-    pub fn new(data: Vec<f32>, channels: u16) -> Self {
-        Self {
-            position: 0,
-            data,
-            channels,
-        }
-    }
-}
-
-impl Iterator for AudioFrame {
-    type Item = f32;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.position < self.data.len() {
-            let sample = self.data[self.position];
-            self.position += 1;
-            Some(sample)
-        } else {
-            None
-        }
-    }
-}
-
-#[derive(Component, Debug)]
-#[require(GlobalTransform)]
-pub struct AudioSource {
-    pub source: audionimbus::Source,
-    pub data: Vec<audionimbus::Sample>, // Mono
-    pub is_repeating: bool,
-    pub position: usize,
 }
 
 #[derive(Resource)]
@@ -408,7 +365,7 @@ pub struct ListenerSource {
 }
 
 #[derive(Component, Deref, DerefMut)]
-pub struct AudionimbusSource(audionimbus::Source);
+pub struct AudionimbusSource(pub audionimbus::Source);
 
 pub struct Plugin;
 
@@ -640,42 +597,6 @@ impl bevy::app::Plugin for Plugin {
         )
         .unwrap();
 
-        let direct_effect = audionimbus::DirectEffect::try_new(
-            &context,
-            &settings,
-            &audionimbus::DirectEffectSettings { num_channels: 1 },
-        )
-        .unwrap();
-
-        let reflection_effect = audionimbus::ReflectionEffect::try_new(
-            &context,
-            &settings,
-            &audionimbus::ReflectionEffectSettings::Convolution {
-                impulse_response_size: 2 * SAMPLING_RATE,
-                num_channels: AMBISONICS_NUM_CHANNELS,
-            },
-        )
-        .unwrap();
-
-        let reverb_effect = audionimbus::ReflectionEffect::try_new(
-            &context,
-            &settings,
-            &audionimbus::ReflectionEffectSettings::Convolution {
-                impulse_response_size: 2 * SAMPLING_RATE,
-                num_channels: AMBISONICS_NUM_CHANNELS,
-            },
-        )
-        .unwrap();
-
-        let ambisonics_encode_effect = audionimbus::AmbisonicsEncodeEffect::try_new(
-            &context,
-            &settings,
-            &audionimbus::AmbisonicsEncodeEffectSettings {
-                max_order: AMBISONICS_ORDER,
-            },
-        )
-        .unwrap();
-
         let ambisonics_decode_effect = audionimbus::AmbisonicsDecodeEffect::try_new(
             &context,
             &settings,
@@ -693,10 +614,6 @@ impl bevy::app::Plugin for Plugin {
             scene,
             simulator,
             hrtf,
-            direct_effect,
-            reflection_effect,
-            reverb_effect,
-            ambisonics_encode_effect,
             ambisonics_decode_effect,
         });
 

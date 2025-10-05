@@ -1,12 +1,10 @@
-use std::io::Read as _;
-
 use bevy::{
     asset::RenderAssetUsages,
     mesh::{Indices, PrimitiveTopology},
     post_process::bloom::Bloom,
     prelude::*,
 };
-use bevy_seedling::SeedlingPlugin;
+use bevy_seedling::prelude::*;
 
 use crate::camera_controller::CameraController;
 
@@ -36,6 +34,7 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut audio: ResMut<audio::Audio>,
+    assets: Res<AssetServer>,
 ) {
     let sphere = meshes.add(Sphere { radius: 0.1 });
     let sphere_material = materials.add(StandardMaterial {
@@ -67,16 +66,6 @@ fn setup(
     audio.simulator.add_source(&source);
     audio.simulator.commit();
 
-    let assets = std::path::Path::new(env!("OUT_DIR")).join("assets");
-    let file = std::fs::File::open(assets.join("piano.raw")).unwrap();
-    let mut reader = std::io::BufReader::new(file);
-    let mut samples: Vec<f32> = Vec::new();
-    let mut buffer = [0u8; 4]; // f32 is 4 bytes
-    while reader.read_exact(&mut buffer).is_ok() {
-        let sample = f32::from_le_bytes(buffer);
-        samples.push(sample);
-    }
-
     #[cfg(not(any(feature = "direct", feature = "reverb")))]
     {
         let source_position = Transform::from_xyz(0.0, 2.0, 0.0);
@@ -84,12 +73,23 @@ fn setup(
             Mesh3d(sphere.clone()),
             MeshMaterial3d(sphere_material.clone()),
             source_position,
-            audio::AudioSource {
-                source,
-                data: samples,
-                is_repeating: true,
-                position: 0,
-            },
+            SamplePlayer::new(assets.load("selfless_courage.ogg")).looping(),
+            audio::AudionimbusSource(source),
+            sample_effects![
+                audio::AmbisonicNode {
+                    source_position: default(),
+                    listener_position: default(),
+                    settings: default(),
+                    context: audio.context.clone(),
+                    simulation_outputs: default(),
+                    reverb_effect_params: default()
+                },
+                audio::AmbisonicDecodeNode {
+                    listener_orientation: default(),
+                    hrtf: audio.hrtf.clone().into(),
+                    ambisonics_decode_effect: audio.ambisonics_decode_effect.clone().into()
+                }
+            ],
         ));
         commands.spawn((
             source_position,
