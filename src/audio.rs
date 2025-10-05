@@ -241,9 +241,8 @@ impl AudioNodeProcessor for AmbisonicProcessor {
 pub struct AmbisonicDecodeNode {
     pub listener_orientation: AudionimbusCoordinateSystem,
     #[diff(skip)]
-    pub hrtf: AudionimbusHrtf,
-    #[diff(skip)]
-    pub ambisonics_decode_effect: AudionimbusAmbisonicsDecodeEffect,
+    pub context: audionimbus::Context,
+    pub settings: AudionimbusAudioSettings,
 }
 
 impl AudioNode for AmbisonicDecodeNode {
@@ -264,11 +263,30 @@ impl AudioNode for AmbisonicDecodeNode {
         _config: &Self::Configuration,
         _cx: ConstructProcessorContext,
     ) -> impl AudioNodeProcessor {
+        let hrtf = audionimbus::Hrtf::try_new(
+            &self.context,
+            &self.settings.clone().into(),
+            &audionimbus::HrtfSettings {
+                volume_normalization: audionimbus::VolumeNormalization::RootMeanSquared,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
         AmbisonicDecodeProcessor {
             params: self.clone(),
             listener_orientation: self.listener_orientation.into(),
-            hrtf: self.hrtf.clone().into(),
-            ambisonics_decode_effect: self.ambisonics_decode_effect.clone().into(),
+            hrtf: hrtf.clone(),
+            ambisonics_decode_effect: audionimbus::AmbisonicsDecodeEffect::try_new(
+                &self.context,
+                &self.settings.clone().into(),
+                &audionimbus::AmbisonicsDecodeEffectSettings {
+                    max_order: AMBISONICS_ORDER,
+                    speaker_layout: audionimbus::SpeakerLayout::Stereo,
+                    hrtf: &hrtf,
+                },
+            )
+            .unwrap(),
         }
     }
 }
@@ -355,8 +373,6 @@ pub struct Audio {
     pub settings: audionimbus::AudioSettings,
     pub scene: audionimbus::Scene,
     pub simulator: audionimbus::Simulator<audionimbus::Direct, audionimbus::Reflections>,
-    pub hrtf: audionimbus::Hrtf,
-    pub ambisonics_decode_effect: audionimbus::AmbisonicsDecodeEffect,
 }
 
 #[derive(Resource)]
@@ -488,8 +504,8 @@ impl Plugin {
             };
             *decode_node = AmbisonicDecodeNode {
                 listener_orientation: listener_orientation.into(),
-                hrtf: audio.hrtf.clone().into(),
-                ambisonics_decode_effect: audio.ambisonics_decode_effect.clone().into(),
+                context: audio.context.clone(),
+                settings: audio.settings.into(),
             };
         }
     }
@@ -577,6 +593,7 @@ impl bevy::app::Plugin for Plugin {
         .try_build(&context)
         .unwrap();
         simulator.set_scene(&scene);
+
         // Listener source used for reverb.
         let listener_source = audionimbus::Source::try_new(
             &simulator,
@@ -591,34 +608,11 @@ impl bevy::app::Plugin for Plugin {
         });
         simulator.commit();
 
-        let hrtf = audionimbus::Hrtf::try_new(
-            &context,
-            &settings,
-            &audionimbus::HrtfSettings {
-                volume_normalization: audionimbus::VolumeNormalization::RootMeanSquared,
-                ..Default::default()
-            },
-        )
-        .unwrap();
-
-        let ambisonics_decode_effect = audionimbus::AmbisonicsDecodeEffect::try_new(
-            &context,
-            &settings,
-            &audionimbus::AmbisonicsDecodeEffectSettings {
-                max_order: AMBISONICS_ORDER,
-                speaker_layout: audionimbus::SpeakerLayout::Stereo,
-                hrtf: &hrtf,
-            },
-        )
-        .unwrap();
-
         app.insert_resource(Audio {
             context,
             settings,
             scene,
             simulator,
-            hrtf,
-            ambisonics_decode_effect,
         });
 
         app.add_systems(PostUpdate, Self::prepare_seedling_data);

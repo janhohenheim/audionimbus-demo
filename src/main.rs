@@ -77,17 +77,17 @@ fn setup(
             audio::AudionimbusSource(source),
             sample_effects![
                 audio::AmbisonicNode {
+                    context: audio.context.clone(),
                     source_position: default(),
                     listener_position: default(),
                     settings: default(),
-                    context: audio.context.clone(),
                     simulation_outputs: default(),
                     reverb_effect_params: default()
                 },
                 audio::AmbisonicDecodeNode {
                     listener_orientation: default(),
-                    hrtf: audio.hrtf.clone().into(),
-                    ambisonics_decode_effect: audio.ambisonics_decode_effect.clone().into()
+                    context: audio.context.clone(),
+                    settings: audio.settings.into(),
                 }
             ],
         ));
