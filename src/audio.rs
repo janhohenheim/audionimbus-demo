@@ -101,14 +101,14 @@ impl AudioNodeProcessor for AmbisonicProcessor {
             return ProcessStatus::ClearAllOutputs;
         }
 
-        let Some(outputs) = self.outputs.as_ref() else {
+        let Some(simulation_outputs) = self.outputs.as_ref() else {
             return ProcessStatus::ClearAllOutputs;
         };
 
         let source_position = self.params.source_position;
 
-        let direct_effect_params = &outputs.direct;
-        let reflection_effect_params = &outputs.reflections;
+        let direct_effect_params = &simulation_outputs.direct;
+        let reflection_effect_params = &simulation_outputs.reflections;
 
         let mut channel_ptrs = [std::ptr::null_mut(); AMBISONICS_NUM_CHANNELS];
         let input_buffer =
@@ -149,7 +149,10 @@ impl AudioNodeProcessor for AmbisonicProcessor {
             &ambisonics_encode_buffer,
         );
 
-        // TODO: write this into the outputs
+        for channel in 0..AMBISONICS_NUM_CHANNELS {
+            outputs[channel] = ambisonics_encode_container
+                [channel * FRAME_SIZE..channel * FRAME_SIZE + FRAME_SIZE];
+        }
 
         ProcessStatus::outputs_not_silent()
     }
