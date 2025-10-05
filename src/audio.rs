@@ -24,11 +24,6 @@ pub(super) fn plugin(app: &mut App) {
 
     let context = audionimbus::Context::try_new(&audionimbus::ContextSettings::default()).unwrap();
 
-    let settings = audionimbus::AudioSettings {
-        frame_size: FRAME_SIZE,
-        sampling_rate: SAMPLING_RATE,
-    };
-
     let mut scene =
         audionimbus::Scene::try_new(&context, &audionimbus::SceneSettings::default()).unwrap();
 
@@ -115,7 +110,6 @@ pub(super) fn plugin(app: &mut App) {
 
     app.insert_resource(Audio {
         context,
-        settings,
         scene,
         simulator,
     });
@@ -127,8 +121,6 @@ pub(super) fn plugin(app: &mut App) {
 }
 
 pub(crate) const FRAME_SIZE: usize = 1024;
-pub(crate) const SAMPLING_RATE: usize = 48000;
-pub(crate) const NUM_CHANNELS: usize = 2;
 pub(crate) const AMBISONICS_ORDER: usize = 2;
 pub(crate) const AMBISONICS_NUM_CHANNELS: usize = (AMBISONICS_ORDER + 1).pow(2);
 pub(crate) const GAIN_FACTOR_DIRECT: f32 = 1.0;
@@ -139,7 +131,6 @@ pub(crate) const GAIN_FACTOR_REVERB: f32 = 0.1;
 pub(crate) struct AmbisonicNode {
     pub(crate) source_position: Vec3,
     pub(crate) listener_position: Vec3,
-    pub(crate) settings: AudionimbusAudioSettings,
     #[diff(skip)]
     pub(crate) context: audionimbus::Context,
     pub(crate) simulation_outputs: Option<AudionimbusSimulationOutputs>,
@@ -162,13 +153,17 @@ impl AudioNode for AmbisonicNode {
     fn construct_processor(
         &self,
         _config: &Self::Configuration,
-        _cx: ConstructProcessorContext,
+        cx: ConstructProcessorContext,
     ) -> impl AudioNodeProcessor {
+        let settings = audionimbus::AudioSettings {
+            sampling_rate: cx.stream_info.sample_rate.get() as usize,
+            frame_size: FRAME_SIZE,
+        };
         AmbisonicProcessor {
             params: self.clone(),
             ambisonics_encode_effect: audionimbus::AmbisonicsEncodeEffect::try_new(
                 &self.context,
-                &self.settings.clone().into(),
+                &settings,
                 &audionimbus::AmbisonicsEncodeEffectSettings {
                     max_order: AMBISONICS_ORDER,
                 },
@@ -176,15 +171,15 @@ impl AudioNode for AmbisonicNode {
             .unwrap(),
             direct_effect: audionimbus::DirectEffect::try_new(
                 &self.context,
-                &self.settings.clone().into(),
+                &settings,
                 &audionimbus::DirectEffectSettings { num_channels: 1 },
             )
             .unwrap(),
             reflection_effect: audionimbus::ReflectionEffect::try_new(
                 &self.context,
-                &self.settings.clone().into(),
+                &settings,
                 &audionimbus::ReflectionEffectSettings::Convolution {
-                    impulse_response_size: 2 * SAMPLING_RATE,
+                    impulse_response_size: (2 * cx.stream_info.sample_rate.get()) as usize,
                     num_channels: AMBISONICS_NUM_CHANNELS,
                 },
             )
@@ -348,7 +343,6 @@ pub(crate) struct AmbisonicDecodeNode {
     pub(crate) listener_orientation: AudionimbusCoordinateSystem,
     #[diff(skip)]
     pub(crate) context: audionimbus::Context,
-    pub(crate) settings: AudionimbusAudioSettings,
 }
 
 impl AudioNode for AmbisonicDecodeNode {
@@ -367,11 +361,15 @@ impl AudioNode for AmbisonicDecodeNode {
     fn construct_processor(
         &self,
         _config: &Self::Configuration,
-        _cx: ConstructProcessorContext,
+        cx: ConstructProcessorContext,
     ) -> impl AudioNodeProcessor {
+        let settings = audionimbus::AudioSettings {
+            sampling_rate: cx.stream_info.sample_rate.get() as usize,
+            frame_size: FRAME_SIZE,
+        };
         let hrtf = audionimbus::Hrtf::try_new(
             &self.context,
-            &self.settings.clone().into(),
+            &settings,
             &audionimbus::HrtfSettings {
                 volume_normalization: audionimbus::VolumeNormalization::RootMeanSquared,
                 ..Default::default()
@@ -385,7 +383,7 @@ impl AudioNode for AmbisonicDecodeNode {
             hrtf: hrtf.clone(),
             ambisonics_decode_effect: audionimbus::AmbisonicsDecodeEffect::try_new(
                 &self.context,
-                &self.settings.clone().into(),
+                &settings,
                 &audionimbus::AmbisonicsDecodeEffectSettings {
                     max_order: AMBISONICS_ORDER,
                     speaker_layout: audionimbus::SpeakerLayout::Stereo,
@@ -440,10 +438,10 @@ impl AudioNodeProcessor for AmbisonicDecodeProcessor {
         )
         .unwrap();
 
-        let mut staging_container = vec![0.0; FRAME_SIZE * NUM_CHANNELS];
-        let mut channel_ptrs = [std::ptr::null_mut(); NUM_CHANNELS];
+        let mut staging_container = vec![0.0; FRAME_SIZE * 2];
+        let mut channel_ptrs = [std::ptr::null_mut(); 2];
         let settings = audionimbus::AudioBufferSettings {
-            num_channels: Some(NUM_CHANNELS),
+            num_channels: Some(outputs.len()),
             ..Default::default()
         };
         let staging_buffer = audionimbus::AudioBuffer::try_with_data_and_settings(
@@ -465,7 +463,7 @@ impl AudioNodeProcessor for AmbisonicDecodeProcessor {
             &staging_buffer,
         );
 
-        for i in 0..NUM_CHANNELS {
+        for i in 0..outputs.len() {
             outputs[i].copy_from_slice(&staging_container[i * FRAME_SIZE..(i + 1) * FRAME_SIZE]);
         }
 
@@ -473,13 +471,16 @@ impl AudioNodeProcessor for AmbisonicDecodeProcessor {
     }
 }
 
-#[derive(Resource)]
-pub(crate) struct Audio {
-    pub(crate) context: audionimbus::Context,
-    pub(crate) settings: audionimbus::AudioSettings,
-    pub(crate) scene: audionimbus::Scene,
-    pub(crate) simulator: audionimbus::Simulator<audionimbus::Direct, audionimbus::Reflections>,
-}
+#[derive(Resource, Deref, DerefMut)]
+pub(crate) struct AudionimbusContext(audionimbus::Context);
+
+#[derive(Resource, Deref, DerefMut)]
+pub(crate) struct AudionimbusScene(audionimbus::Scene);
+
+#[derive(Resource, Deref, DerefMut)]
+pub(crate) struct AudionimbusSimulator(
+    audionimbus::Simulator<audionimbus::Direct, audionimbus::Reflections>,
+);
 
 #[derive(Resource)]
 pub(crate) struct ListenerSource {
@@ -600,7 +601,6 @@ fn prepare_seedling_data(
         *node = AmbisonicNode {
             source_position,
             listener_position,
-            settings: audio.settings.into(),
             context: audio.context.clone(),
             simulation_outputs: Some((&simulation_outputs).into()),
             reverb_effect_params: Some(reverb_effect_params.deref().into()),
@@ -608,7 +608,6 @@ fn prepare_seedling_data(
         *decode_node = AmbisonicDecodeNode {
             listener_orientation: listener_orientation.into(),
             context: audio.context.clone(),
-            settings: audio.settings.into(),
         };
     }
 }

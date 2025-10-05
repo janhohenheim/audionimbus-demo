@@ -81,7 +81,6 @@ fn setup(
                     context: audio.context.clone(),
                     source_position: default(),
                     listener_position: default(),
-                    settings: default(),
                     simulation_outputs: default(),
                     reverb_effect_params: default()
                 },

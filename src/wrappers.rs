@@ -267,36 +267,6 @@ impl<const N: usize> From<audionimbus::Equalizer<N>> for AudionimbusEqualizer<N>
     }
 }
 
-#[derive(Debug, Clone, Diff, Patch)]
-pub(crate) struct AudionimbusAudioSettings {
-    pub(crate) sampling_rate: u32,
-    pub(crate) frame_size: u32,
-}
-
-impl Default for AudionimbusAudioSettings {
-    fn default() -> Self {
-        audionimbus::AudioSettings::default().into()
-    }
-}
-
-impl From<AudionimbusAudioSettings> for audionimbus::AudioSettings {
-    fn from(settings: AudionimbusAudioSettings) -> Self {
-        Self {
-            sampling_rate: settings.sampling_rate as usize,
-            frame_size: settings.frame_size as usize,
-        }
-    }
-}
-
-impl From<audionimbus::AudioSettings> for AudionimbusAudioSettings {
-    fn from(settings: audionimbus::AudioSettings) -> Self {
-        Self {
-            sampling_rate: settings.sampling_rate as u32,
-            frame_size: settings.frame_size as u32,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, Default, PartialEq, Diff, Patch)]
 pub(crate) struct AudionimbusCoordinateSystem {
     /// Unit vector pointing to the right (local +x axis).
