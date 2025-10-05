@@ -18,24 +18,24 @@ use itertools::izip;
 
 use crate::wrappers::*;
 
-pub const FRAME_SIZE: usize = 1024;
-pub const SAMPLING_RATE: usize = 48000;
-pub const NUM_CHANNELS: usize = 2;
-pub const AMBISONICS_ORDER: usize = 2;
-pub const AMBISONICS_NUM_CHANNELS: usize = (AMBISONICS_ORDER + 1).pow(2);
-pub const GAIN_FACTOR_DIRECT: f32 = 1.0;
-pub const GAIN_FACTOR_REFLECTIONS: f32 = 0.3;
-pub const GAIN_FACTOR_REVERB: f32 = 0.1;
+pub(crate) const FRAME_SIZE: usize = 1024;
+pub(crate) const SAMPLING_RATE: usize = 48000;
+pub(crate) const NUM_CHANNELS: usize = 2;
+pub(crate) const AMBISONICS_ORDER: usize = 2;
+pub(crate) const AMBISONICS_NUM_CHANNELS: usize = (AMBISONICS_ORDER + 1).pow(2);
+pub(crate) const GAIN_FACTOR_DIRECT: f32 = 1.0;
+pub(crate) const GAIN_FACTOR_REFLECTIONS: f32 = 0.3;
+pub(crate) const GAIN_FACTOR_REVERB: f32 = 0.1;
 
 #[derive(Diff, Patch, Debug, Clone, Component)]
-pub struct AmbisonicNode {
-    pub source_position: Vec3,
-    pub listener_position: Vec3,
-    pub settings: AudionimbusAudioSettings,
+pub(crate) struct AmbisonicNode {
+    pub(crate) source_position: Vec3,
+    pub(crate) listener_position: Vec3,
+    pub(crate) settings: AudionimbusAudioSettings,
     #[diff(skip)]
-    pub context: audionimbus::Context,
-    pub simulation_outputs: Option<AudionimbusSimulationOutputs>,
-    pub reverb_effect_params: Option<AudionimbusReflectionEffectParams>,
+    pub(crate) context: audionimbus::Context,
+    pub(crate) simulation_outputs: Option<AudionimbusSimulationOutputs>,
+    pub(crate) reverb_effect_params: Option<AudionimbusReflectionEffectParams>,
 }
 
 impl AudioNode for AmbisonicNode {
@@ -236,11 +236,11 @@ impl AudioNodeProcessor for AmbisonicProcessor {
 }
 
 #[derive(Diff, Patch, Debug, Clone, Component)]
-pub struct AmbisonicDecodeNode {
-    pub listener_orientation: AudionimbusCoordinateSystem,
+pub(crate) struct AmbisonicDecodeNode {
+    pub(crate) listener_orientation: AudionimbusCoordinateSystem,
     #[diff(skip)]
-    pub context: audionimbus::Context,
-    pub settings: AudionimbusAudioSettings,
+    pub(crate) context: audionimbus::Context,
+    pub(crate) settings: AudionimbusAudioSettings,
 }
 
 impl AudioNode for AmbisonicDecodeNode {
@@ -366,23 +366,23 @@ impl AudioNodeProcessor for AmbisonicDecodeProcessor {
 }
 
 #[derive(Resource)]
-pub struct Audio {
-    pub context: audionimbus::Context,
-    pub settings: audionimbus::AudioSettings,
-    pub scene: audionimbus::Scene,
-    pub simulator: audionimbus::Simulator<audionimbus::Direct, audionimbus::Reflections>,
+pub(crate) struct Audio {
+    pub(crate) context: audionimbus::Context,
+    pub(crate) settings: audionimbus::AudioSettings,
+    pub(crate) scene: audionimbus::Scene,
+    pub(crate) simulator: audionimbus::Simulator<audionimbus::Direct, audionimbus::Reflections>,
 }
 
 #[derive(Resource)]
-pub struct ListenerSource {
+pub(crate) struct ListenerSource {
     // Special source used for reverb.
-    pub source: audionimbus::Source,
+    pub(crate) source: audionimbus::Source,
 }
 
 #[derive(Component, Deref, DerefMut)]
-pub struct AudionimbusSource(pub audionimbus::Source);
+pub(crate) struct AudionimbusSource(pub(crate) audionimbus::Source);
 
-pub struct Plugin;
+pub(crate) struct Plugin;
 
 impl Plugin {
     fn prepare_seedling_data(

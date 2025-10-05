@@ -4,9 +4,9 @@ use bevy::{math::Vec3, transform::components::Transform};
 use firewheel::diff::{Diff, Patch, RealtimeClone};
 
 #[derive(Debug, Clone, RealtimeClone, Diff, Patch, PartialEq)]
-pub struct AudionimbusSimulationOutputs {
-    pub direct: AudionimbusDirectEffectParams,
-    pub reflections: AudionimbusReflectionEffectParams,
+pub(crate) struct AudionimbusSimulationOutputs {
+    pub(crate) direct: AudionimbusDirectEffectParams,
+    pub(crate) reflections: AudionimbusReflectionEffectParams,
 }
 
 impl From<&audionimbus::SimulationOutputs> for AudionimbusSimulationOutputs {
@@ -20,38 +20,38 @@ impl From<&audionimbus::SimulationOutputs> for AudionimbusSimulationOutputs {
 
 /// Parameters for applying a reflection effect to an audio buffer.
 #[derive(Debug, Clone, RealtimeClone, Diff, Patch, PartialEq)]
-pub struct AudionimbusReflectionEffectParams {
+pub(crate) struct AudionimbusReflectionEffectParams {
     /// Type of reflection effect algorithm to use.
-    pub reflection_effect_type: AudionimbusReflectionEffectType,
+    pub(crate) reflection_effect_type: AudionimbusReflectionEffectType,
 
     /// The impulse response.
     #[diff(skip)]
-    pub impulse_response: ReflectionEffectIR,
+    pub(crate) impulse_response: ReflectionEffectIR,
 
     /// 3-band reverb decay times (RT60).
-    pub reverb_times: [f32; 3],
+    pub(crate) reverb_times: [f32; 3],
 
     /// 3-band EQ coefficients applied to the parametric part to ensure smooth transition.
-    pub equalizer: AudionimbusEqualizer<3>,
+    pub(crate) equalizer: AudionimbusEqualizer<3>,
 
     /// Samples after which parametric part starts.
-    pub delay: u64,
+    pub(crate) delay: u64,
 
     /// Number of IR channels to process.
     /// May be less than the number of channels specified when creating the effect, in which case CPU usage will be reduced.
-    pub num_channels: u64,
+    pub(crate) num_channels: u64,
 
     /// Number of IR samples per channel to process.
     /// May be less than the number of samples specified when creating the effect, in which case CPU usage will be reduced.
-    pub impulse_response_size: u64,
+    pub(crate) impulse_response_size: u64,
 
     /// The TrueAudio Next device to use for convolution processing.
     #[diff(skip)]
-    pub true_audio_next_device: TrueAudioNextDevice,
+    pub(crate) true_audio_next_device: TrueAudioNextDevice,
 
     /// The TrueAudio Next slot index to use for convolution processing.
     /// The slot identifies the IR to use.
-    pub true_audio_next_slot: u64,
+    pub(crate) true_audio_next_slot: u64,
 }
 
 impl From<&AudionimbusReflectionEffectParams> for audionimbus::ReflectionEffectParams {
@@ -87,7 +87,7 @@ impl From<&audionimbus::ReflectionEffectParams> for AudionimbusReflectionEffectP
 }
 
 #[derive(Debug, Clone, RealtimeClone, PartialEq)]
-pub struct AudionimbusAmbisonicsDecodeEffect(audionimbus_sys::IPLAmbisonicsDecodeEffect);
+pub(crate) struct AudionimbusAmbisonicsDecodeEffect(audionimbus_sys::IPLAmbisonicsDecodeEffect);
 unsafe impl Send for AudionimbusAmbisonicsDecodeEffect {}
 unsafe impl Sync for AudionimbusAmbisonicsDecodeEffect {}
 
@@ -104,12 +104,12 @@ impl From<AudionimbusAmbisonicsDecodeEffect> for audionimbus::AmbisonicsDecodeEf
 }
 
 #[derive(Debug, Clone, RealtimeClone, PartialEq)]
-pub struct ReflectionEffectIR(pub audionimbus_sys::IPLReflectionEffectIR);
+pub(crate) struct ReflectionEffectIR(pub(crate) audionimbus_sys::IPLReflectionEffectIR);
 unsafe impl Send for ReflectionEffectIR {}
 unsafe impl Sync for ReflectionEffectIR {}
 
 #[derive(Debug, Clone, RealtimeClone, PartialEq)]
-pub struct TrueAudioNextDevice(pub(crate) audionimbus_sys::IPLTrueAudioNextDevice);
+pub(crate) struct TrueAudioNextDevice(pub(crate) audionimbus_sys::IPLTrueAudioNextDevice);
 unsafe impl Send for TrueAudioNextDevice {}
 unsafe impl Sync for TrueAudioNextDevice {}
 
@@ -127,7 +127,7 @@ impl From<TrueAudioNextDevice> for audionimbus::TrueAudioNextDevice {
 
 /// Type of reflection effect algorithm to use.
 #[derive(Debug, Clone, RealtimeClone, Diff, Patch, PartialEq)]
-pub enum AudionimbusReflectionEffectType {
+pub(crate) enum AudionimbusReflectionEffectType {
     /// Multi-channel convolution reverb.
     /// Reflections reaching the listener are encoded in an Impulse Response (IR), which is a filter that records each reflection as it arrives.
     /// This algorithm renders reflections with the most detail, but may result in significant CPU usage.
@@ -178,21 +178,21 @@ impl From<AudionimbusReflectionEffectType> for audionimbus::ReflectionEffectType
 
 /// Parameters for applying a direct effect to an audio buffer.
 #[derive(Debug, Clone, RealtimeClone, Default, Diff, Patch, PartialEq)]
-pub struct AudionimbusDirectEffectParams {
+pub(crate) struct AudionimbusDirectEffectParams {
     /// Optional distance attenuation, with a value between 0.0 and 1.0.
-    pub distance_attenuation: Option<f32>,
+    pub(crate) distance_attenuation: Option<f32>,
 
     /// Optional air absorption.
-    pub air_absorption: Option<AudionimbusEqualizer<3>>,
+    pub(crate) air_absorption: Option<AudionimbusEqualizer<3>>,
 
     /// Optional directivity term, with a value between 0.0 and 1.0.
-    pub directivity: Option<f32>,
+    pub(crate) directivity: Option<f32>,
 
     /// Optional occlusion factor, with a value between 0.0 and 1.0.
-    pub occlusion: Option<f32>,
+    pub(crate) occlusion: Option<f32>,
 
     /// Optional transmission.
-    pub transmission: Option<AudionimbusTransmission>,
+    pub(crate) transmission: Option<AudionimbusTransmission>,
 }
 
 impl From<&AudionimbusDirectEffectParams> for audionimbus::DirectEffectParams {
@@ -220,7 +220,7 @@ impl From<&audionimbus::DirectEffectParams> for AudionimbusDirectEffectParams {
 }
 
 #[derive(Debug, Clone, RealtimeClone, Diff, Patch, PartialEq)]
-pub enum AudionimbusTransmission {
+pub(crate) enum AudionimbusTransmission {
     /// Frequency-independent transmission.
     FrequencyIndependent(AudionimbusEqualizer<3>),
 
@@ -253,7 +253,7 @@ impl From<audionimbus::Transmission> for AudionimbusTransmission {
 }
 
 #[derive(Debug, Clone, RealtimeClone, Diff, Patch, PartialEq)]
-pub struct AudionimbusEqualizer<const N: usize>(pub [f32; N]);
+pub(crate) struct AudionimbusEqualizer<const N: usize>(pub(crate) [f32; N]);
 
 impl<const N: usize> From<AudionimbusEqualizer<N>> for audionimbus::Equalizer<N> {
     fn from(eq: AudionimbusEqualizer<N>) -> Self {
@@ -268,9 +268,9 @@ impl<const N: usize> From<audionimbus::Equalizer<N>> for AudionimbusEqualizer<N>
 }
 
 #[derive(Debug, Clone, Diff, Patch)]
-pub struct AudionimbusAudioSettings {
-    pub sampling_rate: u32,
-    pub frame_size: u32,
+pub(crate) struct AudionimbusAudioSettings {
+    pub(crate) sampling_rate: u32,
+    pub(crate) frame_size: u32,
 }
 
 impl Default for AudionimbusAudioSettings {
@@ -298,18 +298,18 @@ impl From<audionimbus::AudioSettings> for AudionimbusAudioSettings {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Diff, Patch)]
-pub struct AudionimbusCoordinateSystem {
+pub(crate) struct AudionimbusCoordinateSystem {
     /// Unit vector pointing to the right (local +x axis).
-    pub right: Vec3,
+    pub(crate) right: Vec3,
 
     /// Unit vector pointing upwards (local +y axis).
-    pub up: Vec3,
+    pub(crate) up: Vec3,
 
     /// Unit vector pointing forwards (local -z axis).
-    pub ahead: Vec3,
+    pub(crate) ahead: Vec3,
 
     /// The origin, relative to the canonical coordinate system.
-    pub origin: Vec3,
+    pub(crate) origin: Vec3,
 }
 
 impl From<AudionimbusCoordinateSystem> for audionimbus::CoordinateSystem {
@@ -367,7 +367,7 @@ impl From<Transform> for AudionimbusCoordinateSystem {
 }
 
 #[derive(Debug, Clone, RealtimeClone, PartialEq)]
-pub struct AudionimbusHrtf(pub(crate) audionimbus_sys::IPLHRTF);
+pub(crate) struct AudionimbusHrtf(pub(crate) audionimbus_sys::IPLHRTF);
 unsafe impl Send for AudionimbusHrtf {}
 unsafe impl Sync for AudionimbusHrtf {}
 
