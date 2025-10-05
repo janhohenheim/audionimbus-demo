@@ -8,8 +8,8 @@ pub struct AudionimbusSimulationOutputs {
     pub reflections: AudionimbusReflectionEffectParams,
 }
 
-impl From<audionimbus::SimulationOutputs> for AudionimbusSimulationOutputs {
-    fn from(outputs: audionimbus::SimulationOutputs) -> Self {
+impl From<&audionimbus::SimulationOutputs> for AudionimbusSimulationOutputs {
+    fn from(outputs: &audionimbus::SimulationOutputs) -> Self {
         Self {
             direct: outputs.direct().deref().into(),
             reflections: outputs.reflections().deref().into(),

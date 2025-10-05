@@ -33,7 +33,8 @@ pub struct AmbisonicNode {
     settings: AudionimbusAudioSettings,
     #[diff(skip)]
     context: audionimbus::Context,
-    output: Option<AudionimbusSimulationOutputs>,
+    simulation_outputs: Option<AudionimbusSimulationOutputs>,
+    reverb_effect_params: Option<AudionimbusReflectionEffectParams>,
 }
 
 impl AudioNode for AmbisonicNode {
@@ -79,7 +80,11 @@ impl AudioNode for AmbisonicNode {
                 },
             )
             .unwrap(),
-            outputs: self.output.clone(),
+            simulation_outputs: self.simulation_outputs.clone(),
+            reverb_effect_params: self
+                .reverb_effect_params
+                .as_ref()
+                .map(|params| params.into()),
         }
     }
 }
@@ -89,7 +94,8 @@ struct AmbisonicProcessor {
     ambisonics_encode_effect: audionimbus::AmbisonicsEncodeEffect,
     direct_effect: audionimbus::DirectEffect,
     reflection_effect: audionimbus::ReflectionEffect,
-    outputs: Option<AudionimbusSimulationOutputs>,
+    reverb_effect_params: Option<audionimbus::ReflectionEffectParams>,
+    simulation_outputs: Option<AudionimbusSimulationOutputs>,
 }
 
 impl AudioNodeProcessor for AmbisonicProcessor {
@@ -111,7 +117,10 @@ impl AudioNodeProcessor for AmbisonicProcessor {
             return ProcessStatus::ClearAllOutputs;
         }
 
-        let Some(simulation_outputs) = self.outputs.as_ref() else {
+        let (Some(simulation_outputs), Some(reverb_effect_params)) = (
+            self.simulation_outputs.as_ref(),
+            self.reverb_effect_params.as_ref(),
+        ) else {
             return ProcessStatus::ClearAllOutputs;
         };
 
@@ -182,13 +191,46 @@ impl AudioNodeProcessor for AmbisonicProcessor {
             &reflection_buffer,
         );
 
-        // TODO: what about reverb?
+        let mut reverb_container = vec![0.0; FRAME_SIZE * AMBISONICS_NUM_CHANNELS];
+        let settings = audionimbus::AudioBufferSettings {
+            num_channels: Some(AMBISONICS_NUM_CHANNELS),
+            ..Default::default()
+        };
+        let mut channel_ptrs = [std::ptr::null_mut(); AMBISONICS_NUM_CHANNELS];
+        let reverb_buffer = audionimbus::AudioBuffer::try_with_data_and_settings(
+            &mut reverb_container,
+            &mut channel_ptrs,
+            settings,
+        )
+        .unwrap();
+        let _effect_state =
+            self.reflection_effect
+                .apply(&reverb_effect_params, &input_buffer, &reverb_buffer);
 
-        for channel in 0..AMBISONICS_NUM_CHANNELS {
-            outputs[channel].copy_from_slice(
-                &reflection_container[channel * FRAME_SIZE..channel * FRAME_SIZE + FRAME_SIZE],
-            );
-        }
+        izip!(
+            ambisonics_encode_buffer.channels(),
+            reflection_buffer.channels(),
+            reverb_buffer.channels()
+        )
+        .map(|(direct_channel, reflection_channel, reverb_channel)| {
+            izip!(
+                direct_channel.iter(),
+                reflection_channel.iter(),
+                reverb_channel.iter()
+            )
+            .map(|(direct_sample, reflections_sample, reverb_sample)| {
+                (direct_sample * GAIN_FACTOR_DIRECT
+                    + reflections_sample * GAIN_FACTOR_REFLECTIONS
+                    + reverb_sample * GAIN_FACTOR_REVERB)
+                    / (GAIN_FACTOR_DIRECT + GAIN_FACTOR_REFLECTIONS + GAIN_FACTOR_REVERB)
+            })
+        })
+        .enumerate()
+        .for_each(|(i, channel)| {
+            for (output, sample) in outputs[i].iter_mut().zip(channel) {
+                *output = sample;
+            }
+        });
 
         ProcessStatus::outputs_not_silent()
     }
@@ -244,25 +286,6 @@ impl AudioNodeProcessor for AmbisonicDecodeProcessor {
             return ProcessStatus::ClearAllOutputs;
         }
 
-        let mut mix_container = izip!(
-            ambisonics_encode_buffer.channels(),
-            reflection_buffer.channels(),
-            reverb_buffer.channels()
-        )
-        .flat_map(|(direct_channel, reflection_channel, reverb_channel)| {
-            izip!(
-                direct_channel.iter(),
-                reflection_channel.iter(),
-                reverb_channel.iter()
-            )
-            .map(|(direct_sample, reflections_sample, reverb_sample)| {
-                (direct_sample * GAIN_FACTOR_DIRECT
-                    + reflections_sample * GAIN_FACTOR_REFLECTIONS
-                    + reverb_sample * GAIN_FACTOR_REVERB)
-                    / (GAIN_FACTOR_DIRECT + GAIN_FACTOR_REFLECTIONS + GAIN_FACTOR_REVERB)
-            })
-        })
-        .collect::<Vec<_>>();
         let mix_buffer = audionimbus::AudioBuffer::try_with_data_and_settings(
             &mut mix_container,
             &audionimbus::AudioBufferSettings {
