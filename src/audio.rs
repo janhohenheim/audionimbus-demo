@@ -39,9 +39,9 @@ pub struct AmbisonicNode {
 impl AudioNode for AmbisonicNode {
     type Configuration = EmptyConfig;
 
-    fn info(&self, config: &Self::Configuration) -> AudioNodeInfo {
+    fn info(&self, _config: &Self::Configuration) -> AudioNodeInfo {
         AudioNodeInfo::new()
-            .debug_name("ambisonic processor")
+            .debug_name("ambisonic node")
             // 1 -> 9
             .channel_config(ChannelConfig {
                 num_inputs: ChannelCount::MONO,
@@ -189,6 +189,116 @@ impl AudioNodeProcessor for AmbisonicProcessor {
                 &reflection_container[channel * FRAME_SIZE..channel * FRAME_SIZE + FRAME_SIZE],
             );
         }
+
+        ProcessStatus::outputs_not_silent()
+    }
+}
+
+#[derive(Diff, Patch, Debug, Clone, Component)]
+pub struct AmbisonicDecodeNode;
+
+impl AudioNode for AmbisonicDecodeNode {
+    type Configuration = EmptyConfig;
+
+    fn info(&self, _config: &Self::Configuration) -> AudioNodeInfo {
+        AudioNodeInfo::new()
+            .debug_name("ambisonic decode node")
+            // 9 -> 2
+            .channel_config(ChannelConfig {
+                num_inputs: ChannelCount::new(AMBISONICS_NUM_CHANNELS as u32).unwrap(),
+                num_outputs: ChannelCount::STEREO,
+            })
+    }
+
+    fn construct_processor(
+        &self,
+        _config: &Self::Configuration,
+        _cx: ConstructProcessorContext,
+    ) -> impl AudioNodeProcessor {
+        AmbisonicDecodeProcessor {
+            params: self.clone(),
+        }
+    }
+}
+
+struct AmbisonicDecodeProcessor {
+    params: AmbisonicDecodeNode,
+}
+
+impl AudioNodeProcessor for AmbisonicDecodeProcessor {
+    fn process(
+        &mut self,
+        proc_info: &ProcInfo,
+        ProcBuffers { inputs, outputs }: ProcBuffers,
+        events: &mut ProcEvents,
+        _: &mut ProcExtra,
+    ) -> ProcessStatus {
+        for patch in events.drain_patches::<AmbisonicDecodeNode>() {
+            self.params.apply(patch);
+        }
+
+        // Firewheel will inform you if an input channel is silent. If they're
+        // all silent, we can simply skip processing and save CPU time.
+        if proc_info.in_silence_mask.all_channels_silent(inputs.len()) {
+            // All inputs are silent.
+            return ProcessStatus::ClearAllOutputs;
+        }
+
+        let mut mix_container = izip!(
+            ambisonics_encode_buffer.channels(),
+            reflection_buffer.channels(),
+            reverb_buffer.channels()
+        )
+        .flat_map(|(direct_channel, reflection_channel, reverb_channel)| {
+            izip!(
+                direct_channel.iter(),
+                reflection_channel.iter(),
+                reverb_channel.iter()
+            )
+            .map(|(direct_sample, reflections_sample, reverb_sample)| {
+                (direct_sample * GAIN_FACTOR_DIRECT
+                    + reflections_sample * GAIN_FACTOR_REFLECTIONS
+                    + reverb_sample * GAIN_FACTOR_REVERB)
+                    / (GAIN_FACTOR_DIRECT + GAIN_FACTOR_REFLECTIONS + GAIN_FACTOR_REVERB)
+            })
+        })
+        .collect::<Vec<_>>();
+        let mix_buffer = audionimbus::AudioBuffer::try_with_data_and_settings(
+            &mut mix_container,
+            &audionimbus::AudioBufferSettings {
+                num_channels: Some(AMBISONICS_NUM_CHANNELS),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let mut staging_container = vec![0.0; FRAME_SIZE * NUM_CHANNELS];
+        let staging_buffer = audionimbus::AudioBuffer::try_with_data_and_settings(
+            &mut staging_container,
+            &audionimbus::AudioBufferSettings {
+                num_channels: Some(NUM_CHANNELS),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let ambisonics_decode_effect_params = audionimbus::AmbisonicsDecodeEffectParams {
+            order: AMBISONICS_ORDER,
+            hrtf: &audio.hrtf,
+            orientation: listener_orientation,
+            binaural: false,
+        };
+        let _effect_state = audio.ambisonics_decode_effect.apply(
+            &ambisonics_decode_effect_params,
+            &mix_buffer,
+            &staging_buffer,
+        );
+
+        deinterleaved_container = staging_container
+            .iter()
+            .zip(deinterleaved_container.iter())
+            .map(|(a, b)| a + b)
+            .collect();
 
         ProcessStatus::outputs_not_silent()
     }
@@ -581,10 +691,6 @@ impl Plugin {
 
 impl bevy::app::Plugin for Plugin {
     fn build(&self, app: &mut App) {
-        let (stream, stream_handle) = OutputStream::try_default().unwrap();
-        let sink = Sink::try_new(&stream_handle).unwrap();
-        app.insert_non_send_resource(stream);
-
         let context =
             audionimbus::Context::try_new(&audionimbus::ContextSettings::default()).unwrap();
 
@@ -743,7 +849,6 @@ impl bevy::app::Plugin for Plugin {
             reverb_effect,
             ambisonics_encode_effect,
             ambisonics_decode_effect,
-            sink,
             timer: Timer::new(
                 Duration::from_secs_f32(FRAME_SIZE as f32 / SAMPLING_RATE as f32),
                 TimerMode::Repeating,
