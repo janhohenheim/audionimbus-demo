@@ -12,6 +12,7 @@ use crate::camera_controller::CameraController;
 
 mod audio;
 mod camera_controller;
+mod wrappers;
 
 fn main() {
     App::new()

@@ -20,6 +20,8 @@ use firewheel::{
 };
 use itertools::izip;
 
+use crate::wrappers::*;
+
 pub const FRAME_SIZE: usize = 1024;
 pub const SAMPLING_RATE: usize = 48000;
 pub const NUM_CHANNELS: usize = 2;
@@ -34,7 +36,10 @@ pub struct AmbisonicNode {
     // Note to self: need to manually write a simple version of `SimulationInputs` without void ptr garbage or lifetimes and derive Diff, Patch on it.
     source_position: Vec3,
     listener_position: Vec3,
-    ambisonics_encode_effect: audionimbus::AmbisonicsEncodeEffect,
+    settings: AudionimbusAudioSettings,
+    #[diff(skip)]
+    context: audionimbus::Context,
+    output: Option<AudionimbusSimulationOutputs>,
 }
 
 impl AudioNode for AmbisonicNode {
@@ -57,12 +62,30 @@ impl AudioNode for AmbisonicNode {
     ) -> impl AudioNodeProcessor {
         AmbisonicProcessor {
             params: self.clone(),
+            ambisonics_encode_effect: audionimbus::AmbisonicsEncodeEffect::try_new(
+                &self.context,
+                &self.settings.into(),
+                &audionimbus::AmbisonicsEncodeEffectSettings {
+                    max_order: AMBISONICS_ORDER,
+                },
+            )
+            .unwrap(),
+            direct_effect: audionimbus::DirectEffect::try_new(
+                &self.context,
+                &self.settings.into(),
+                &audionimbus::DirectEffectSettings { num_channels: 1 },
+            )
+            .unwrap(),
+            outputs: self.output.clone(),
         }
     }
 }
 
 struct AmbisonicProcessor {
     params: AmbisonicNode,
+    ambisonics_encode_effect: audionimbus::AmbisonicsEncodeEffect,
+    direct_effect: audionimbus::DirectEffect,
+    outputs: Option<AudionimbusSimulationOutputs>,
 }
 
 impl AudioNodeProcessor for AmbisonicProcessor {
@@ -86,57 +109,27 @@ impl AudioNodeProcessor for AmbisonicProcessor {
 
         let source_position = self.params.source_position;
 
-        audio_source.source.set_inputs(
-            simulation_flags,
-            audionimbus::SimulationInputs {
-                source: audionimbus::CoordinateSystem {
-                    origin: audionimbus::Vector3::new(
-                        source_position.x,
-                        source_position.y,
-                        source_position.z,
-                    ),
-                    ..Default::default()
-                },
-                direct_simulation: Some(audionimbus::DirectSimulationParameters {
-                    distance_attenuation: Some(audionimbus::DistanceAttenuationModel::Default),
-                    air_absorption: Some(audionimbus::AirAbsorptionModel::Default),
-                    directivity: Some(audionimbus::Directivity::default()),
-                    occlusion: Some(audionimbus::Occlusion {
-                        transmission: Some(audionimbus::TransmissionParameters {
-                            num_transmission_rays: 8,
-                        }),
-                        algorithm: audionimbus::OcclusionAlgorithm::Raycast,
-                    }),
-                }),
-                reflections_simulation: Some(
-                    audionimbus::ReflectionsSimulationParameters::Convolution {
-                        baked_data_identifier: None,
-                    },
-                ),
-                pathing_simulation: None,
-            },
-        );
+        let direct_effect_params = &self.outputs.direct;
+        let reflection_effect_params = &self.outputs.reflections;
 
-        let simulation_flags =
-            audionimbus::SimulationFlags::DIRECT | audionimbus::SimulationFlags::REFLECTIONS;
-        let simulation_outputs = audio_source.source.get_outputs(simulation_flags);
-        let direct_effect_params = simulation_outputs.direct();
-        let reflection_effect_params = simulation_outputs.reflections();
-
+        // TODO: don't allocate
         let input_buffer = audionimbus::AudioBuffer::try_with_data(inputs).unwrap();
 
+        // TODO: don't allocate
         let mut direct_container = vec![0.0; FRAME_SIZE];
+        // TODO: don't allocate
         let direct_buffer = audionimbus::AudioBuffer::try_with_data(&mut direct_container).unwrap();
         let _effect_state =
-            audio
-                .direct_effectx
+            self.direct_effect
                 .apply(&direct_effect_params, &input_buffer, &direct_buffer);
 
         let listener_position = self.params.listener_position;
         let direction = source_position - listener_position;
         let direction = audionimbus::Direction::new(direction.x, direction.y, direction.z);
 
+        // TODO: don't allocate
         let mut ambisonics_encode_container = vec![0.0; FRAME_SIZE * AMBISONICS_NUM_CHANNELS];
+        // TODO: don't allocate
         let ambisonics_encode_buffer = audionimbus::AudioBuffer::try_with_data_and_settings(
             &mut ambisonics_encode_container,
             &audionimbus::AudioBufferSettings {
@@ -149,15 +142,20 @@ impl AudioNodeProcessor for AmbisonicProcessor {
             direction,
             order: AMBISONICS_ORDER,
         };
-        let _effect_state = audio.ambisonics_encode_effect.apply(
+        let _effect_state = self.ambisonics_encode_effect.apply(
             &ambisonics_encode_effect_params,
             &direct_buffer,
             &ambisonics_encode_buffer,
         );
 
+        // TODO: write this into the outputs
+
         ProcessStatus::outputs_not_silent()
     }
 }
+
+#[derive(Resource)]
+struct AudionimbusContext(Arc<audionimbus::Context>);
 
 #[derive(Resource)]
 pub struct Audio {
