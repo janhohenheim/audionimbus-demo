@@ -1,8 +1,6 @@
-use arrayvec::ArrayVec;
-use firewheel::{
-    collector::OwnedGc,
-    diff::{Diff, Patch, RealtimeClone},
-};
+use std::ops::Deref as _;
+
+use firewheel::diff::{Diff, Patch, RealtimeClone};
 
 #[derive(Debug, Clone, RealtimeClone, Diff, Patch, PartialEq)]
 pub struct AudionimbusSimulationOutputs {
@@ -13,8 +11,8 @@ pub struct AudionimbusSimulationOutputs {
 impl From<audionimbus::SimulationOutputs> for AudionimbusSimulationOutputs {
     fn from(outputs: audionimbus::SimulationOutputs) -> Self {
         Self {
-            direct: outputs.direct().into(),
-            reflections: outputs.reflections().into(),
+            direct: outputs.direct().deref().into(),
+            reflections: outputs.reflections().deref().into(),
         }
     }
 }
@@ -27,7 +25,7 @@ pub struct AudionimbusReflectionEffectParams {
 
     /// The impulse response.
     #[diff(skip)]
-    pub impulse_response: OwnedGc<ReflectionEffectIR>,
+    pub impulse_response: ReflectionEffectIR,
 
     /// 3-band reverb decay times (RT60).
     pub reverb_times: [f32; 3],
@@ -36,28 +34,78 @@ pub struct AudionimbusReflectionEffectParams {
     pub equalizer: AudionimbusEqualizer<3>,
 
     /// Samples after which parametric part starts.
-    pub delay: u32,
+    pub delay: u64,
 
     /// Number of IR channels to process.
     /// May be less than the number of channels specified when creating the effect, in which case CPU usage will be reduced.
-    pub num_channels: u32,
+    pub num_channels: u64,
 
     /// Number of IR samples per channel to process.
     /// May be less than the number of samples specified when creating the effect, in which case CPU usage will be reduced.
-    pub impulse_response_size: u32,
+    pub impulse_response_size: u64,
 
     /// The TrueAudio Next device to use for convolution processing.
-    //pub true_audio_next_device: TrueAudioNextDevice,
+    #[diff(skip)]
+    pub true_audio_next_device: TrueAudioNextDevice,
 
     /// The TrueAudio Next slot index to use for convolution processing.
     /// The slot identifies the IR to use.
-    pub true_audio_next_slot: u32,
+    pub true_audio_next_slot: u64,
+}
+
+impl From<&AudionimbusReflectionEffectParams> for audionimbus::ReflectionEffectParams {
+    fn from(params: &AudionimbusReflectionEffectParams) -> Self {
+        Self {
+            num_channels: params.num_channels as usize,
+            impulse_response_size: params.impulse_response_size as usize,
+            true_audio_next_device: params.true_audio_next_device.clone().into(),
+            true_audio_next_slot: params.true_audio_next_slot as usize,
+            reflection_effect_type: params.reflection_effect_type.clone().into(),
+            impulse_response: params.impulse_response.0,
+            reverb_times: params.reverb_times.into(),
+            equalizer: params.equalizer.clone().into(),
+            delay: params.delay as usize,
+        }
+    }
+}
+
+impl From<&audionimbus::ReflectionEffectParams> for AudionimbusReflectionEffectParams {
+    fn from(value: &audionimbus::ReflectionEffectParams) -> Self {
+        Self {
+            num_channels: value.num_channels as u64,
+            impulse_response_size: value.impulse_response_size as u64,
+            true_audio_next_device: value.true_audio_next_device.clone().into(),
+            true_audio_next_slot: value.true_audio_next_slot as u64,
+            reflection_effect_type: value.reflection_effect_type.into(),
+            impulse_response: ReflectionEffectIR(value.impulse_response),
+            reverb_times: value.reverb_times.into(),
+            equalizer: value.equalizer.into(),
+            delay: value.delay as u64,
+        }
+    }
 }
 
 #[derive(Debug, Clone, RealtimeClone, PartialEq)]
 pub struct ReflectionEffectIR(pub audionimbus_sys::IPLReflectionEffectIR);
-
 unsafe impl Send for ReflectionEffectIR {}
+unsafe impl Sync for ReflectionEffectIR {}
+
+#[derive(Debug, Clone, RealtimeClone, PartialEq)]
+pub struct TrueAudioNextDevice(pub(crate) audionimbus_sys::IPLTrueAudioNextDevice);
+unsafe impl Send for TrueAudioNextDevice {}
+unsafe impl Sync for TrueAudioNextDevice {}
+
+impl From<audionimbus::TrueAudioNextDevice> for TrueAudioNextDevice {
+    fn from(device: audionimbus::TrueAudioNextDevice) -> Self {
+        Self(device.raw_ptr())
+    }
+}
+
+impl From<TrueAudioNextDevice> for audionimbus::TrueAudioNextDevice {
+    fn from(device: TrueAudioNextDevice) -> Self {
+        Self::from_raw_ptr(device.0)
+    }
+}
 
 /// Type of reflection effect algorithm to use.
 #[derive(Debug, Clone, RealtimeClone, Diff, Patch, PartialEq)]
@@ -88,6 +136,28 @@ pub enum AudionimbusReflectionEffectType {
     TrueAudioNext,
 }
 
+impl From<audionimbus::ReflectionEffectType> for AudionimbusReflectionEffectType {
+    fn from(value: audionimbus::ReflectionEffectType) -> Self {
+        match value {
+            audionimbus::ReflectionEffectType::Convolution => Self::Convolution,
+            audionimbus::ReflectionEffectType::Parametric => Self::Parametric,
+            audionimbus::ReflectionEffectType::Hybrid => Self::Hybrid,
+            audionimbus::ReflectionEffectType::TrueAudioNext => Self::TrueAudioNext,
+        }
+    }
+}
+
+impl From<AudionimbusReflectionEffectType> for audionimbus::ReflectionEffectType {
+    fn from(value: AudionimbusReflectionEffectType) -> Self {
+        match value {
+            AudionimbusReflectionEffectType::Convolution => Self::Convolution,
+            AudionimbusReflectionEffectType::Parametric => Self::Parametric,
+            AudionimbusReflectionEffectType::Hybrid => Self::Hybrid,
+            AudionimbusReflectionEffectType::TrueAudioNext => Self::TrueAudioNext,
+        }
+    }
+}
+
 /// Parameters for applying a direct effect to an audio buffer.
 #[derive(Debug, Clone, RealtimeClone, Default, Diff, Patch, PartialEq)]
 pub struct AudionimbusDirectEffectParams {
@@ -107,6 +177,30 @@ pub struct AudionimbusDirectEffectParams {
     pub transmission: Option<AudionimbusTransmission>,
 }
 
+impl From<&AudionimbusDirectEffectParams> for audionimbus::DirectEffectParams {
+    fn from(params: &AudionimbusDirectEffectParams) -> Self {
+        Self {
+            distance_attenuation: params.distance_attenuation,
+            air_absorption: params.air_absorption.clone().map(|eq| eq.into()),
+            directivity: params.directivity,
+            occlusion: params.occlusion,
+            transmission: params.transmission.clone().map(|trans| trans.into()),
+        }
+    }
+}
+
+impl From<&audionimbus::DirectEffectParams> for AudionimbusDirectEffectParams {
+    fn from(params: &audionimbus::DirectEffectParams) -> Self {
+        Self {
+            distance_attenuation: params.distance_attenuation,
+            air_absorption: params.air_absorption.map(|eq| eq.into()),
+            directivity: params.directivity,
+            occlusion: params.occlusion,
+            transmission: params.transmission.map(|trans| trans.into()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, RealtimeClone, Diff, Patch, PartialEq)]
 pub enum AudionimbusTransmission {
     /// Frequency-independent transmission.
@@ -116,8 +210,44 @@ pub enum AudionimbusTransmission {
     FrequencyDependent(AudionimbusEqualizer<3>),
 }
 
+impl From<AudionimbusTransmission> for audionimbus::Transmission {
+    fn from(transmission: AudionimbusTransmission) -> Self {
+        match transmission {
+            AudionimbusTransmission::FrequencyIndependent(eq) => {
+                Self::FrequencyIndependent(eq.into())
+            }
+            AudionimbusTransmission::FrequencyDependent(eq) => Self::FrequencyDependent(eq.into()),
+        }
+    }
+}
+
+impl From<audionimbus::Transmission> for AudionimbusTransmission {
+    fn from(transmission: audionimbus::Transmission) -> Self {
+        match transmission {
+            audionimbus::Transmission::FrequencyIndependent(eq) => {
+                Self::FrequencyIndependent(eq.into())
+            }
+            audionimbus::Transmission::FrequencyDependent(eq) => {
+                Self::FrequencyDependent(eq.into())
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, RealtimeClone, Diff, Patch, PartialEq)]
 pub struct AudionimbusEqualizer<const N: usize>(pub [f32; N]);
+
+impl<const N: usize> From<AudionimbusEqualizer<N>> for audionimbus::Equalizer<N> {
+    fn from(eq: AudionimbusEqualizer<N>) -> Self {
+        Self(eq.0.into())
+    }
+}
+
+impl<const N: usize> From<audionimbus::Equalizer<N>> for AudionimbusEqualizer<N> {
+    fn from(eq: audionimbus::Equalizer<N>) -> Self {
+        Self(eq.0.into())
+    }
+}
 
 #[derive(Debug, Clone, Diff, Patch)]
 pub struct AudionimbusAudioSettings {

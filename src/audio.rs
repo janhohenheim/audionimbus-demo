@@ -45,7 +45,7 @@ impl AudioNode for AmbisonicNode {
             // 1 -> 9
             .channel_config(ChannelConfig {
                 num_inputs: ChannelCount::MONO,
-                num_outputs: ChannelCount::new(AMBISONICS_NUM_CHANNELS),
+                num_outputs: ChannelCount::new(AMBISONICS_NUM_CHANNELS as u32).unwrap(),
             })
     }
 
@@ -58,7 +58,7 @@ impl AudioNode for AmbisonicNode {
             params: self.clone(),
             ambisonics_encode_effect: audionimbus::AmbisonicsEncodeEffect::try_new(
                 &self.context,
-                &self.settings.into(),
+                &self.settings.clone().into(),
                 &audionimbus::AmbisonicsEncodeEffectSettings {
                     max_order: AMBISONICS_ORDER,
                 },
@@ -66,8 +66,17 @@ impl AudioNode for AmbisonicNode {
             .unwrap(),
             direct_effect: audionimbus::DirectEffect::try_new(
                 &self.context,
-                &self.settings.into(),
+                &self.settings.clone().into(),
                 &audionimbus::DirectEffectSettings { num_channels: 1 },
+            )
+            .unwrap(),
+            reflection_effect: audionimbus::ReflectionEffect::try_new(
+                &self.context,
+                &self.settings.clone().into(),
+                &audionimbus::ReflectionEffectSettings::Convolution {
+                    impulse_response_size: 2 * SAMPLING_RATE,
+                    num_channels: AMBISONICS_NUM_CHANNELS,
+                },
             )
             .unwrap(),
             outputs: self.output.clone(),
@@ -79,6 +88,7 @@ struct AmbisonicProcessor {
     params: AmbisonicNode,
     ambisonics_encode_effect: audionimbus::AmbisonicsEncodeEffect,
     direct_effect: audionimbus::DirectEffect,
+    reflection_effect: audionimbus::ReflectionEffect,
     outputs: Option<AudionimbusSimulationOutputs>,
 }
 
@@ -110,9 +120,14 @@ impl AudioNodeProcessor for AmbisonicProcessor {
         let direct_effect_params = &simulation_outputs.direct;
         let reflection_effect_params = &simulation_outputs.reflections;
 
+        let mut flat_inputs = [0.0; NUM_CHANNELS * FRAME_SIZE];
+        for i in 0..NUM_CHANNELS {
+            flat_inputs[i * FRAME_SIZE..(i + 1) * FRAME_SIZE].copy_from_slice(&inputs[i]);
+        }
+
         let mut channel_ptrs = [std::ptr::null_mut(); AMBISONICS_NUM_CHANNELS];
         let input_buffer =
-            audionimbus::AudioBuffer::try_with_data(inputs, &mut channel_ptrs).unwrap();
+            audionimbus::AudioBuffer::try_with_data(flat_inputs, &mut channel_ptrs).unwrap();
 
         let mut direct_container = [0.0; FRAME_SIZE];
         let mut channel_ptrs = [std::ptr::null_mut(); 1];
@@ -121,7 +136,7 @@ impl AudioNodeProcessor for AmbisonicProcessor {
                 .unwrap();
         let _effect_state =
             self.direct_effect
-                .apply(&direct_effect_params, &input_buffer, &direct_buffer);
+                .apply(&direct_effect_params.into(), &input_buffer, &direct_buffer);
 
         let listener_position = self.params.listener_position;
         let direction = source_position - listener_position;
@@ -149,9 +164,30 @@ impl AudioNodeProcessor for AmbisonicProcessor {
             &ambisonics_encode_buffer,
         );
 
+        let mut reflection_container = vec![0.0; FRAME_SIZE * AMBISONICS_NUM_CHANNELS];
+        let settings = audionimbus::AudioBufferSettings {
+            num_channels: Some(AMBISONICS_NUM_CHANNELS),
+            ..Default::default()
+        };
+        let mut channel_ptrs = [std::ptr::null_mut(); AMBISONICS_NUM_CHANNELS];
+        let reflection_buffer = audionimbus::AudioBuffer::try_with_data_and_settings(
+            &mut reflection_container,
+            &mut channel_ptrs,
+            settings,
+        )
+        .unwrap();
+        let _effect_state = self.reflection_effect.apply(
+            &reflection_effect_params.into(),
+            &input_buffer,
+            &reflection_buffer,
+        );
+
+        // TODO: what about reverb?
+
         for channel in 0..AMBISONICS_NUM_CHANNELS {
-            outputs[channel] = ambisonics_encode_container
-                [channel * FRAME_SIZE..channel * FRAME_SIZE + FRAME_SIZE];
+            outputs[channel].copy_from_slice(
+                &reflection_container[channel * FRAME_SIZE..channel * FRAME_SIZE + FRAME_SIZE],
+            );
         }
 
         ProcessStatus::outputs_not_silent()
@@ -173,7 +209,6 @@ pub struct Audio {
     pub reverb_effect: audionimbus::ReflectionEffect,
     pub ambisonics_encode_effect: audionimbus::AmbisonicsEncodeEffect,
     pub ambisonics_decode_effect: audionimbus::AmbisonicsDecodeEffect,
-    pub sink: Sink,
     pub timer: Timer,
 }
 
@@ -204,26 +239,6 @@ impl Iterator for AudioFrame {
         } else {
             None
         }
-    }
-}
-
-impl Source for AudioFrame {
-    fn current_frame_len(&self) -> Option<usize> {
-        Some(self.data.len())
-    }
-
-    fn channels(&self) -> u16 {
-        self.channels
-    }
-
-    fn sample_rate(&self) -> u32 {
-        SAMPLING_RATE as u32
-    }
-
-    fn total_duration(&self) -> Option<Duration> {
-        Some(Duration::from_secs_f32(
-            self.data.len() as f32 / (SAMPLING_RATE as f32 * self.channels as f32),
-        ))
     }
 }
 
