@@ -1,5 +1,6 @@
 use std::ops::Deref as _;
 
+use bevy::{math::Vec3, transform::components::Transform};
 use firewheel::diff::{Diff, Patch, RealtimeClone};
 
 #[derive(Debug, Clone, RealtimeClone, Diff, Patch, PartialEq)]
@@ -82,6 +83,23 @@ impl From<&audionimbus::ReflectionEffectParams> for AudionimbusReflectionEffectP
             equalizer: value.equalizer.into(),
             delay: value.delay as u64,
         }
+    }
+}
+
+#[derive(Debug, Clone, RealtimeClone, PartialEq)]
+pub struct AudionimbusAmbisonicsDecodeEffect(audionimbus_sys::IPLAmbisonicsDecodeEffect);
+unsafe impl Send for AudionimbusAmbisonicsDecodeEffect {}
+unsafe impl Sync for AudionimbusAmbisonicsDecodeEffect {}
+
+impl From<audionimbus::AmbisonicsDecodeEffect> for AudionimbusAmbisonicsDecodeEffect {
+    fn from(effect: audionimbus::AmbisonicsDecodeEffect) -> Self {
+        Self(effect.raw_ptr())
+    }
+}
+
+impl From<AudionimbusAmbisonicsDecodeEffect> for audionimbus::AmbisonicsDecodeEffect {
+    fn from(effect: AudionimbusAmbisonicsDecodeEffect) -> Self {
+        Self::from_raw_ptr(effect.0)
     }
 }
 
@@ -276,5 +294,91 @@ impl From<audionimbus::AudioSettings> for AudionimbusAudioSettings {
             sampling_rate: settings.sampling_rate as u32,
             frame_size: settings.frame_size as u32,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Diff, Patch)]
+pub struct AudionimbusCoordinateSystem {
+    /// Unit vector pointing to the right (local +x axis).
+    pub right: Vec3,
+
+    /// Unit vector pointing upwards (local +y axis).
+    pub up: Vec3,
+
+    /// Unit vector pointing forwards (local -z axis).
+    pub ahead: Vec3,
+
+    /// The origin, relative to the canonical coordinate system.
+    pub origin: Vec3,
+}
+
+impl From<AudionimbusCoordinateSystem> for audionimbus::CoordinateSystem {
+    fn from(system: AudionimbusCoordinateSystem) -> Self {
+        Self {
+            right: audionimbus::Vector3 {
+                x: system.right.x,
+                y: system.right.y,
+                z: system.right.z,
+            },
+            up: audionimbus::Vector3 {
+                x: system.up.x,
+                y: system.up.y,
+                z: system.up.z,
+            },
+            ahead: audionimbus::Vector3 {
+                x: system.ahead.x,
+                y: system.ahead.y,
+                z: system.ahead.z,
+            },
+            origin: audionimbus::Point {
+                x: system.origin.x,
+                y: system.origin.y,
+                z: system.origin.z,
+            },
+        }
+    }
+}
+
+impl From<audionimbus::CoordinateSystem> for AudionimbusCoordinateSystem {
+    fn from(system: audionimbus::CoordinateSystem) -> Self {
+        Self {
+            right: Vec3::new(system.right.x, system.right.y, system.right.z),
+            up: Vec3::new(system.up.x, system.up.y, system.up.z),
+            ahead: Vec3::new(system.ahead.x, system.ahead.y, system.ahead.z),
+            origin: Vec3::new(system.origin.x, system.origin.y, system.origin.z),
+        }
+    }
+}
+
+impl From<Transform> for AudionimbusCoordinateSystem {
+    fn from(transform: Transform) -> Self {
+        let listener_position = transform.translation;
+
+        let listener_orientation_right = transform.right();
+        let listener_orientation_up = transform.up();
+        let listener_orientation_ahead = transform.forward();
+        Self {
+            right: listener_orientation_right.into(),
+            up: listener_orientation_up.into(),
+            ahead: listener_orientation_ahead.into(),
+            origin: listener_position.into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, RealtimeClone, PartialEq)]
+pub struct AudionimbusHrtf(pub(crate) audionimbus_sys::IPLHRTF);
+unsafe impl Send for AudionimbusHrtf {}
+unsafe impl Sync for AudionimbusHrtf {}
+
+impl From<audionimbus::Hrtf> for AudionimbusHrtf {
+    fn from(hrtf: audionimbus::Hrtf) -> Self {
+        Self(hrtf.raw_ptr())
+    }
+}
+
+impl From<AudionimbusHrtf> for audionimbus::Hrtf {
+    fn from(hrtf: AudionimbusHrtf) -> Self {
+        Self::from_raw_ptr(hrtf.0)
     }
 }
