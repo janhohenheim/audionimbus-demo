@@ -15,12 +15,8 @@ use core::f32::consts::*;
 use std::fmt;
 
 /// A freecam-style camera controller plugin.
-pub(crate) struct CameraControllerPlugin;
-
-impl Plugin for CameraControllerPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_systems(Update, run_camera_controller);
-    }
+pub(super) fn plugin(app: &mut App) {
+    app.add_systems(Update, run_camera_controller);
 }
 
 /// Based on Valorant's default sensitivity, not entirely sure why it is exactly 1.0 / 180.0,

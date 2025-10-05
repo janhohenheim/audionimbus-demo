@@ -18,6 +18,114 @@ use itertools::izip;
 
 use crate::wrappers::*;
 
+pub(super) fn plugin(app: &mut App) {
+    app.register_node::<AmbisonicNode>();
+    app.register_node::<AmbisonicDecodeNode>();
+
+    let context = audionimbus::Context::try_new(&audionimbus::ContextSettings::default()).unwrap();
+
+    let settings = audionimbus::AudioSettings {
+        frame_size: FRAME_SIZE,
+        sampling_rate: SAMPLING_RATE,
+    };
+
+    let mut scene =
+        audionimbus::Scene::try_new(&context, &audionimbus::SceneSettings::default()).unwrap();
+
+    let walls = audionimbus::StaticMesh::try_new(
+        &scene,
+        &audionimbus::StaticMeshSettings {
+            vertices: &[
+                // Floor
+                audionimbus::Point::new(-2.0, 0.0, -2.0),
+                audionimbus::Point::new(2.0, 0.0, -2.0),
+                audionimbus::Point::new(2.0, 0.0, 2.0),
+                audionimbus::Point::new(-2.0, 0.0, 2.0),
+                // Ceiling
+                audionimbus::Point::new(-2.0, 4.0, -2.0),
+                audionimbus::Point::new(2.0, 4.0, -2.0),
+                audionimbus::Point::new(2.0, 4.0, 2.0),
+                audionimbus::Point::new(-2.0, 4.0, 2.0),
+                // Back wall
+                audionimbus::Point::new(-2.0, 0.0, -2.0),
+                audionimbus::Point::new(2.0, 0.0, -2.0),
+                audionimbus::Point::new(2.0, 4.0, -2.0),
+                audionimbus::Point::new(-2.0, 4.0, -2.0),
+                // Left wall
+                audionimbus::Point::new(-2.0, 0.0, -2.0),
+                audionimbus::Point::new(-2.0, 0.0, 2.0),
+                audionimbus::Point::new(-2.0, 4.0, 2.0),
+                audionimbus::Point::new(-2.0, 4.0, -2.0),
+            ],
+            triangles: &[
+                // Floor
+                audionimbus::Triangle::new(0, 1, 2),
+                audionimbus::Triangle::new(0, 2, 3),
+                // Ceiling
+                audionimbus::Triangle::new(4, 6, 5),
+                audionimbus::Triangle::new(4, 7, 6),
+                // Back wall
+                audionimbus::Triangle::new(8, 9, 10),
+                audionimbus::Triangle::new(8, 10, 11),
+                // Left wall
+                audionimbus::Triangle::new(12, 14, 13),
+                audionimbus::Triangle::new(12, 15, 14),
+            ],
+            material_indices: &[0, 0, 0, 0, 0, 0, 0, 0],
+            materials: &[audionimbus::Material::WOOD],
+        },
+    )
+    .unwrap();
+    scene.add_static_mesh(&walls);
+    scene.commit();
+
+    let mut simulator = audionimbus::Simulator::builder(
+        audionimbus::SceneParams::Default,
+        SAMPLING_RATE,
+        FRAME_SIZE,
+    )
+    .with_direct(audionimbus::DirectSimulationSettings {
+        max_num_occlusion_samples: 16,
+    })
+    .with_reflections(audionimbus::ReflectionsSimulationSettings::Convolution {
+        max_num_rays: 2048,
+        num_diffuse_samples: 8,
+        max_duration: 2.0,
+        max_order: AMBISONICS_ORDER,
+        max_num_sources: 8,
+        num_threads: 1,
+    })
+    .try_build(&context)
+    .unwrap();
+    simulator.set_scene(&scene);
+
+    // Listener source used for reverb.
+    let listener_source = audionimbus::Source::try_new(
+        &simulator,
+        &audionimbus::SourceSettings {
+            flags: audionimbus::SimulationFlags::REFLECTIONS,
+        },
+    )
+    .unwrap();
+    simulator.add_source(&listener_source);
+    app.insert_resource(ListenerSource {
+        source: listener_source,
+    });
+    simulator.commit();
+
+    app.insert_resource(Audio {
+        context,
+        settings,
+        scene,
+        simulator,
+    });
+
+    app.add_systems(
+        PostUpdate,
+        prepare_seedling_data.after(TransformSystems::Propagate),
+    );
+}
+
 pub(crate) const FRAME_SIZE: usize = 1024;
 pub(crate) const SAMPLING_RATE: usize = 48000;
 pub(crate) const NUM_CHANNELS: usize = 2;
@@ -382,34 +490,88 @@ pub(crate) struct ListenerSource {
 #[derive(Component, Deref, DerefMut)]
 pub(crate) struct AudionimbusSource(pub(crate) audionimbus::Source);
 
-pub(crate) struct Plugin;
+fn prepare_seedling_data(
+    mut nodes: Query<(
+        &mut AmbisonicNode,
+        &mut AmbisonicDecodeNode,
+        &mut AudionimbusSource,
+        &GlobalTransform,
+    )>,
+    camera: Single<&GlobalTransform, With<Camera3d>>,
+    mut listener_source: ResMut<ListenerSource>,
+    mut audio: ResMut<Audio>,
+) {
+    let camera_transform = camera.into_inner().compute_transform();
+    let listener_position = camera_transform.translation;
+    let listener_orientation: audionimbus::CoordinateSystem =
+        AudionimbusCoordinateSystem::from(camera_transform).into();
 
-impl Plugin {
-    fn prepare_seedling_data(
-        mut nodes: Query<(
-            &mut AmbisonicNode,
-            &mut AmbisonicDecodeNode,
-            &mut AudionimbusSource,
-            &GlobalTransform,
-        )>,
-        camera: Single<&GlobalTransform, With<Camera3d>>,
-        mut listener_source: ResMut<ListenerSource>,
-        mut audio: ResMut<Audio>,
-    ) {
-        let camera_transform = camera.into_inner().compute_transform();
-        let listener_position = camera_transform.translation;
-        let listener_orientation: audionimbus::CoordinateSystem =
-            AudionimbusCoordinateSystem::from(camera_transform).into();
+    // Listener source to simulate reverb.
+    listener_source.source.set_inputs(
+        audionimbus::SimulationFlags::REFLECTIONS,
+        audionimbus::SimulationInputs {
+            source: audionimbus::CoordinateSystem {
+                origin: audionimbus::Vector3::new(
+                    listener_position.x,
+                    listener_position.y,
+                    listener_position.z,
+                ),
+                ..Default::default()
+            },
+            direct_simulation: Some(audionimbus::DirectSimulationParameters {
+                distance_attenuation: Some(audionimbus::DistanceAttenuationModel::Default),
+                air_absorption: Some(audionimbus::AirAbsorptionModel::Default),
+                directivity: Some(audionimbus::Directivity::default()),
+                occlusion: Some(audionimbus::Occlusion {
+                    transmission: Some(audionimbus::TransmissionParameters {
+                        num_transmission_rays: 8,
+                    }),
+                    algorithm: audionimbus::OcclusionAlgorithm::Raycast,
+                }),
+            }),
+            reflections_simulation: Some(
+                audionimbus::ReflectionsSimulationParameters::Convolution {
+                    baked_data_identifier: None,
+                },
+            ),
+            pathing_simulation: None,
+        },
+    );
 
-        // Listener source to simulate reverb.
-        listener_source.source.set_inputs(
-            audionimbus::SimulationFlags::REFLECTIONS,
+    let simulation_flags =
+        audionimbus::SimulationFlags::DIRECT | audionimbus::SimulationFlags::REFLECTIONS;
+    audio.simulator.set_shared_inputs(
+        simulation_flags,
+        &audionimbus::SimulationSharedInputs {
+            listener: listener_orientation,
+            num_rays: 2048,
+            num_bounces: 8,
+            duration: 2.0,
+            order: AMBISONICS_ORDER,
+            irradiance_min_distance: 1.0,
+            pathing_visualization_callback: None,
+        },
+    );
+    audio.simulator.run_direct();
+    audio.simulator.run_reflections();
+
+    let reverb_simulation_outputs = listener_source
+        .source
+        .get_outputs(audionimbus::SimulationFlags::REFLECTIONS);
+    let reverb_effect_params = reverb_simulation_outputs.reflections();
+
+    for (mut node, mut decode_node, mut source, transform) in nodes.iter_mut() {
+        let transform = transform.compute_transform();
+        let source_position = transform.translation;
+
+        source.set_inputs(
+            simulation_flags,
             audionimbus::SimulationInputs {
                 source: audionimbus::CoordinateSystem {
                     origin: audionimbus::Vector3::new(
-                        listener_position.x,
-                        listener_position.y,
-                        listener_position.z,
+                        source_position.x,
+                        source_position.y,
+                        source_position.z,
                     ),
                     ..Default::default()
                 },
@@ -433,186 +595,20 @@ impl Plugin {
             },
         );
 
-        let simulation_flags =
-            audionimbus::SimulationFlags::DIRECT | audionimbus::SimulationFlags::REFLECTIONS;
-        audio.simulator.set_shared_inputs(
-            simulation_flags,
-            &audionimbus::SimulationSharedInputs {
-                listener: listener_orientation,
-                num_rays: 2048,
-                num_bounces: 8,
-                duration: 2.0,
-                order: AMBISONICS_ORDER,
-                irradiance_min_distance: 1.0,
-                pathing_visualization_callback: None,
-            },
-        );
-        audio.simulator.run_direct();
-        audio.simulator.run_reflections();
+        let simulation_outputs = source.get_outputs(simulation_flags);
 
-        let reverb_simulation_outputs = listener_source
-            .source
-            .get_outputs(audionimbus::SimulationFlags::REFLECTIONS);
-        let reverb_effect_params = reverb_simulation_outputs.reflections();
-
-        for (mut node, mut decode_node, mut source, transform) in nodes.iter_mut() {
-            let transform = transform.compute_transform();
-            let source_position = transform.translation;
-
-            source.set_inputs(
-                simulation_flags,
-                audionimbus::SimulationInputs {
-                    source: audionimbus::CoordinateSystem {
-                        origin: audionimbus::Vector3::new(
-                            source_position.x,
-                            source_position.y,
-                            source_position.z,
-                        ),
-                        ..Default::default()
-                    },
-                    direct_simulation: Some(audionimbus::DirectSimulationParameters {
-                        distance_attenuation: Some(audionimbus::DistanceAttenuationModel::Default),
-                        air_absorption: Some(audionimbus::AirAbsorptionModel::Default),
-                        directivity: Some(audionimbus::Directivity::default()),
-                        occlusion: Some(audionimbus::Occlusion {
-                            transmission: Some(audionimbus::TransmissionParameters {
-                                num_transmission_rays: 8,
-                            }),
-                            algorithm: audionimbus::OcclusionAlgorithm::Raycast,
-                        }),
-                    }),
-                    reflections_simulation: Some(
-                        audionimbus::ReflectionsSimulationParameters::Convolution {
-                            baked_data_identifier: None,
-                        },
-                    ),
-                    pathing_simulation: None,
-                },
-            );
-
-            let simulation_outputs = source.get_outputs(simulation_flags);
-
-            *node = AmbisonicNode {
-                source_position,
-                listener_position,
-                settings: audio.settings.into(),
-                context: audio.context.clone(),
-                simulation_outputs: Some((&simulation_outputs).into()),
-                reverb_effect_params: Some(reverb_effect_params.deref().into()),
-            };
-            *decode_node = AmbisonicDecodeNode {
-                listener_orientation: listener_orientation.into(),
-                context: audio.context.clone(),
-                settings: audio.settings.into(),
-            };
-        }
-    }
-}
-
-impl bevy::app::Plugin for Plugin {
-    fn build(&self, app: &mut App) {
-        app.register_node::<AmbisonicNode>();
-        app.register_node::<AmbisonicDecodeNode>();
-
-        let context =
-            audionimbus::Context::try_new(&audionimbus::ContextSettings::default()).unwrap();
-
-        let settings = audionimbus::AudioSettings {
-            frame_size: FRAME_SIZE,
-            sampling_rate: SAMPLING_RATE,
+        *node = AmbisonicNode {
+            source_position,
+            listener_position,
+            settings: audio.settings.into(),
+            context: audio.context.clone(),
+            simulation_outputs: Some((&simulation_outputs).into()),
+            reverb_effect_params: Some(reverb_effect_params.deref().into()),
         };
-
-        let mut scene =
-            audionimbus::Scene::try_new(&context, &audionimbus::SceneSettings::default()).unwrap();
-
-        let walls = audionimbus::StaticMesh::try_new(
-            &scene,
-            &audionimbus::StaticMeshSettings {
-                vertices: &[
-                    // Floor
-                    audionimbus::Point::new(-2.0, 0.0, -2.0),
-                    audionimbus::Point::new(2.0, 0.0, -2.0),
-                    audionimbus::Point::new(2.0, 0.0, 2.0),
-                    audionimbus::Point::new(-2.0, 0.0, 2.0),
-                    // Ceiling
-                    audionimbus::Point::new(-2.0, 4.0, -2.0),
-                    audionimbus::Point::new(2.0, 4.0, -2.0),
-                    audionimbus::Point::new(2.0, 4.0, 2.0),
-                    audionimbus::Point::new(-2.0, 4.0, 2.0),
-                    // Back wall
-                    audionimbus::Point::new(-2.0, 0.0, -2.0),
-                    audionimbus::Point::new(2.0, 0.0, -2.0),
-                    audionimbus::Point::new(2.0, 4.0, -2.0),
-                    audionimbus::Point::new(-2.0, 4.0, -2.0),
-                    // Left wall
-                    audionimbus::Point::new(-2.0, 0.0, -2.0),
-                    audionimbus::Point::new(-2.0, 0.0, 2.0),
-                    audionimbus::Point::new(-2.0, 4.0, 2.0),
-                    audionimbus::Point::new(-2.0, 4.0, -2.0),
-                ],
-                triangles: &[
-                    // Floor
-                    audionimbus::Triangle::new(0, 1, 2),
-                    audionimbus::Triangle::new(0, 2, 3),
-                    // Ceiling
-                    audionimbus::Triangle::new(4, 6, 5),
-                    audionimbus::Triangle::new(4, 7, 6),
-                    // Back wall
-                    audionimbus::Triangle::new(8, 9, 10),
-                    audionimbus::Triangle::new(8, 10, 11),
-                    // Left wall
-                    audionimbus::Triangle::new(12, 14, 13),
-                    audionimbus::Triangle::new(12, 15, 14),
-                ],
-                material_indices: &[0, 0, 0, 0, 0, 0, 0, 0],
-                materials: &[audionimbus::Material::WOOD],
-            },
-        )
-        .unwrap();
-        scene.add_static_mesh(&walls);
-        scene.commit();
-
-        let mut simulator = audionimbus::Simulator::builder(
-            audionimbus::SceneParams::Default,
-            SAMPLING_RATE,
-            FRAME_SIZE,
-        )
-        .with_direct(audionimbus::DirectSimulationSettings {
-            max_num_occlusion_samples: 16,
-        })
-        .with_reflections(audionimbus::ReflectionsSimulationSettings::Convolution {
-            max_num_rays: 2048,
-            num_diffuse_samples: 8,
-            max_duration: 2.0,
-            max_order: AMBISONICS_ORDER,
-            max_num_sources: 8,
-            num_threads: 1,
-        })
-        .try_build(&context)
-        .unwrap();
-        simulator.set_scene(&scene);
-
-        // Listener source used for reverb.
-        let listener_source = audionimbus::Source::try_new(
-            &simulator,
-            &audionimbus::SourceSettings {
-                flags: audionimbus::SimulationFlags::REFLECTIONS,
-            },
-        )
-        .unwrap();
-        simulator.add_source(&listener_source);
-        app.insert_resource(ListenerSource {
-            source: listener_source,
-        });
-        simulator.commit();
-
-        app.insert_resource(Audio {
-            context,
-            settings,
-            scene,
-            simulator,
-        });
-
-        app.add_systems(PostUpdate, Self::prepare_seedling_data);
+        *decode_node = AmbisonicDecodeNode {
+            listener_orientation: listener_orientation.into(),
+            context: audio.context.clone(),
+            settings: audio.settings.into(),
+        };
     }
 }

@@ -14,17 +14,18 @@ mod wrappers;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "audionimbus".to_string(),
-                mode: bevy::window::WindowMode::BorderlessFullscreen(MonitorSelection::Primary),
+        .add_plugins((
+            DefaultPlugins.set(WindowPlugin {
+                primary_window: Some(Window {
+                    title: "audionimbus".to_string(),
+                    mode: bevy::window::WindowMode::BorderlessFullscreen(MonitorSelection::Primary),
+                    ..Default::default()
+                }),
                 ..Default::default()
             }),
-            ..Default::default()
-        }))
-        .add_plugins(SeedlingPlugin::default())
-        .add_plugins(audio::Plugin)
-        .add_plugins(camera_controller::CameraControllerPlugin)
+            SeedlingPlugin::default(),
+        ))
+        .add_plugins((audio::plugin, camera_controller::plugin))
         .add_systems(Startup, setup)
         .run();
 }
