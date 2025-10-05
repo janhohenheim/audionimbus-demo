@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{ops::Deref as _, sync::Arc, time::Duration};
 
 use bevy::prelude::*;
 use bevy_seedling::{
@@ -349,12 +349,9 @@ impl AudioNodeProcessor for AmbisonicDecodeProcessor {
 }
 
 #[derive(Resource)]
-struct AudionimbusContext(Arc<audionimbus::Context>);
-
-#[derive(Resource)]
 pub struct Audio {
     pub context: audionimbus::Context,
-
+    pub settings: audionimbus::AudioSettings,
     pub scene: audionimbus::Scene,
     pub simulator: audionimbus::Simulator<audionimbus::Direct, audionimbus::Reflections>,
     pub hrtf: audionimbus::Hrtf,
@@ -363,7 +360,6 @@ pub struct Audio {
     pub reverb_effect: audionimbus::ReflectionEffect,
     pub ambisonics_encode_effect: audionimbus::AmbisonicsEncodeEffect,
     pub ambisonics_decode_effect: audionimbus::AmbisonicsDecodeEffect,
-    pub timer: Timer,
 }
 
 pub struct AudioFrame {
@@ -411,47 +407,27 @@ pub struct ListenerSource {
     pub source: audionimbus::Source,
 }
 
+#[derive(Component, Deref, DerefMut)]
+pub struct AudionimbusSource(audionimbus::Source);
+
 pub struct Plugin;
 
 impl Plugin {
-    fn process_frame(
-        mut commands: Commands,
-        query_character: Single<&GlobalTransform, With<Camera3d>>,
-        mut query_audio_sources: Query<(Entity, &GlobalTransform, &mut AudioSource)>,
-        time: Res<Time>,
-        mut audio: ResMut<Audio>,
+    fn prepare_seedling_data(
+        mut nodes: Query<(
+            &mut AmbisonicNode,
+            &mut AmbisonicDecodeNode,
+            &mut AudionimbusSource,
+            &GlobalTransform,
+        )>,
+        camera: Single<&GlobalTransform, With<Camera3d>>,
         mut listener_source: ResMut<ListenerSource>,
+        mut audio: ResMut<Audio>,
     ) {
-        audio.timer.tick(time.delta());
-
-        let transform = query_character.into_inner().compute_transform();
-        let listener_position = transform.translation;
-
-        let listener_orientation_right = transform.right();
-        let listener_orientation_up = transform.up();
-        let listener_orientation_ahead = transform.forward();
-        let listener_orientation = audionimbus::CoordinateSystem {
-            right: audionimbus::Vector3::new(
-                listener_orientation_right.x,
-                listener_orientation_right.y,
-                listener_orientation_right.z,
-            ),
-            up: audionimbus::Vector3::new(
-                listener_orientation_up.x,
-                listener_orientation_up.y,
-                listener_orientation_up.z,
-            ),
-            ahead: audionimbus::Vector3::new(
-                listener_orientation_ahead.x,
-                listener_orientation_ahead.y,
-                listener_orientation_ahead.z,
-            ),
-            origin: audionimbus::Point::new(
-                listener_position.x,
-                listener_position.y,
-                listener_position.z,
-            ),
-        };
+        let camera_transform = camera.into_inner().compute_transform();
+        let listener_position = camera_transform.translation;
+        let listener_orientation: audionimbus::CoordinateSystem =
+            AudionimbusCoordinateSystem::from(camera_transform).into();
 
         // Listener source to simulate reverb.
         listener_source.source.set_inputs(
@@ -507,228 +483,56 @@ impl Plugin {
             .get_outputs(audionimbus::SimulationFlags::REFLECTIONS);
         let reverb_effect_params = reverb_simulation_outputs.reflections();
 
-        let times_finished_this_tick = audio.timer.times_finished_this_tick();
+        for (mut node, mut decode_node, mut source, transform) in nodes.iter_mut() {
+            let transform = transform.compute_transform();
+            let source_position = transform.translation;
 
-        for _ in 0..times_finished_this_tick {
-            let mut deinterleaved_container = vec![0.0; FRAME_SIZE * NUM_CHANNELS];
-
-            // Iterate over each audio source.
-            for (entity, source_global_transform, mut audio_source) in
-                query_audio_sources.iter_mut()
-            {
-                let frame = if audio_source.is_repeating {
-                    let frame: Vec<_> = (0..FRAME_SIZE)
-                        .map(|i| {
-                            audio_source.data[(audio_source.position + i) % audio_source.data.len()]
-                        })
-                        .collect();
-
-                    // Advance sample position.
-                    audio_source.position =
-                        (audio_source.position + FRAME_SIZE) % audio_source.data.len();
-
-                    frame
-                } else {
-                    let frame = (0..FRAME_SIZE)
-                        .map(|i| {
-                            let idx = audio_source.position + i;
-                            // If no more samples, fill with silence.
-                            if idx < audio_source.data.len() {
-                                audio_source.data[idx]
-                            } else {
-                                0.0
-                            }
-                        })
-                        .collect();
-
-                    // Advance sample position.
-                    audio_source.position += FRAME_SIZE;
-
-                    // If there are no more audio samples to play back.
-                    if audio_source.position >= audio_source.data.len() {
-                        // Despawn audio source.
-                        commands.entity(entity).despawn();
-                    }
-
-                    frame
-                };
-
-                let source_position = source_global_transform.translation();
-
-                audio_source.source.set_inputs(
-                    simulation_flags,
-                    audionimbus::SimulationInputs {
-                        source: audionimbus::CoordinateSystem {
-                            origin: audionimbus::Vector3::new(
-                                source_position.x,
-                                source_position.y,
-                                source_position.z,
-                            ),
-                            ..Default::default()
-                        },
-                        direct_simulation: Some(audionimbus::DirectSimulationParameters {
-                            distance_attenuation: Some(
-                                audionimbus::DistanceAttenuationModel::Default,
-                            ),
-                            air_absorption: Some(audionimbus::AirAbsorptionModel::Default),
-                            directivity: Some(audionimbus::Directivity::default()),
-                            occlusion: Some(audionimbus::Occlusion {
-                                transmission: Some(audionimbus::TransmissionParameters {
-                                    num_transmission_rays: 8,
-                                }),
-                                algorithm: audionimbus::OcclusionAlgorithm::Raycast,
-                            }),
-                        }),
-                        reflections_simulation: Some(
-                            audionimbus::ReflectionsSimulationParameters::Convolution {
-                                baked_data_identifier: None,
-                            },
+            source.set_inputs(
+                simulation_flags,
+                audionimbus::SimulationInputs {
+                    source: audionimbus::CoordinateSystem {
+                        origin: audionimbus::Vector3::new(
+                            source_position.x,
+                            source_position.y,
+                            source_position.z,
                         ),
-                        pathing_simulation: None,
+                        ..Default::default()
                     },
-                );
-
-                let simulation_outputs = audio_source.source.get_outputs(simulation_flags);
-                let direct_effect_params = simulation_outputs.direct();
-                let reflection_effect_params = simulation_outputs.reflections();
-
-                let input_buffer = audionimbus::AudioBuffer::try_with_data(&frame).unwrap();
-
-                let mut direct_container = vec![0.0; FRAME_SIZE];
-                let direct_buffer =
-                    audionimbus::AudioBuffer::try_with_data(&mut direct_container).unwrap();
-                let _effect_state =
-                    audio
-                        .direct_effect
-                        .apply(&direct_effect_params, &input_buffer, &direct_buffer);
-
-                let direction = source_position - listener_position;
-                let direction = audionimbus::Direction::new(direction.x, direction.y, direction.z);
-
-                let mut ambisonics_encode_container =
-                    vec![0.0; FRAME_SIZE * AMBISONICS_NUM_CHANNELS];
-                let ambisonics_encode_buffer =
-                    audionimbus::AudioBuffer::try_with_data_and_settings(
-                        &mut ambisonics_encode_container,
-                        &audionimbus::AudioBufferSettings {
-                            num_channels: Some(AMBISONICS_NUM_CHANNELS),
-                            ..Default::default()
+                    direct_simulation: Some(audionimbus::DirectSimulationParameters {
+                        distance_attenuation: Some(audionimbus::DistanceAttenuationModel::Default),
+                        air_absorption: Some(audionimbus::AirAbsorptionModel::Default),
+                        directivity: Some(audionimbus::Directivity::default()),
+                        occlusion: Some(audionimbus::Occlusion {
+                            transmission: Some(audionimbus::TransmissionParameters {
+                                num_transmission_rays: 8,
+                            }),
+                            algorithm: audionimbus::OcclusionAlgorithm::Raycast,
+                        }),
+                    }),
+                    reflections_simulation: Some(
+                        audionimbus::ReflectionsSimulationParameters::Convolution {
+                            baked_data_identifier: None,
                         },
-                    )
-                    .unwrap();
-                let ambisonics_encode_effect_params = audionimbus::AmbisonicsEncodeEffectParams {
-                    direction,
-                    order: AMBISONICS_ORDER,
-                };
-                let _effect_state = audio.ambisonics_encode_effect.apply(
-                    &ambisonics_encode_effect_params,
-                    &direct_buffer,
-                    &ambisonics_encode_buffer,
-                );
-
-                let mut reflection_container = vec![0.0; FRAME_SIZE * AMBISONICS_NUM_CHANNELS];
-                let reflection_buffer = audionimbus::AudioBuffer::try_with_data_and_settings(
-                    &mut reflection_container,
-                    &audionimbus::AudioBufferSettings {
-                        num_channels: Some(AMBISONICS_NUM_CHANNELS),
-                        ..Default::default()
-                    },
-                )
-                .unwrap();
-                let _effect_state = audio.reflection_effect.apply(
-                    &reflection_effect_params,
-                    &input_buffer,
-                    &reflection_buffer,
-                );
-
-                let mut reverb_container = vec![0.0; FRAME_SIZE * AMBISONICS_NUM_CHANNELS];
-                let reverb_buffer = audionimbus::AudioBuffer::try_with_data_and_settings(
-                    &mut reverb_container,
-                    &audionimbus::AudioBufferSettings {
-                        num_channels: Some(AMBISONICS_NUM_CHANNELS),
-                        ..Default::default()
-                    },
-                )
-                .unwrap();
-                let _effect_state =
-                    audio
-                        .reverb_effect
-                        .apply(&reverb_effect_params, &input_buffer, &reverb_buffer);
-
-                let mut mix_container = izip!(
-                    ambisonics_encode_buffer.channels(),
-                    reflection_buffer.channels(),
-                    reverb_buffer.channels()
-                )
-                .flat_map(|(direct_channel, reflection_channel, reverb_channel)| {
-                    izip!(
-                        direct_channel.iter(),
-                        reflection_channel.iter(),
-                        reverb_channel.iter()
-                    )
-                    .map(
-                        |(direct_sample, reflections_sample, reverb_sample)| {
-                            (direct_sample * GAIN_FACTOR_DIRECT
-                                + reflections_sample * GAIN_FACTOR_REFLECTIONS
-                                + reverb_sample * GAIN_FACTOR_REVERB)
-                                / (GAIN_FACTOR_DIRECT
-                                    + GAIN_FACTOR_REFLECTIONS
-                                    + GAIN_FACTOR_REVERB)
-                        },
-                    )
-                })
-                .collect::<Vec<_>>();
-                let mix_buffer = audionimbus::AudioBuffer::try_with_data_and_settings(
-                    &mut mix_container,
-                    &audionimbus::AudioBufferSettings {
-                        num_channels: Some(AMBISONICS_NUM_CHANNELS),
-                        ..Default::default()
-                    },
-                )
-                .unwrap();
-
-                let mut staging_container = vec![0.0; FRAME_SIZE * NUM_CHANNELS];
-                let staging_buffer = audionimbus::AudioBuffer::try_with_data_and_settings(
-                    &mut staging_container,
-                    &audionimbus::AudioBufferSettings {
-                        num_channels: Some(NUM_CHANNELS),
-                        ..Default::default()
-                    },
-                )
-                .unwrap();
-
-                let ambisonics_decode_effect_params = audionimbus::AmbisonicsDecodeEffectParams {
-                    order: AMBISONICS_ORDER,
-                    hrtf: &audio.hrtf,
-                    orientation: listener_orientation,
-                    binaural: false,
-                };
-                let _effect_state = audio.ambisonics_decode_effect.apply(
-                    &ambisonics_decode_effect_params,
-                    &mix_buffer,
-                    &staging_buffer,
-                );
-
-                deinterleaved_container = staging_container
-                    .iter()
-                    .zip(deinterleaved_container.iter())
-                    .map(|(a, b)| a + b)
-                    .collect();
-            }
-
-            let deinterleaved_buffer = audionimbus::AudioBuffer::try_with_data_and_settings(
-                &mut deinterleaved_container,
-                &audionimbus::AudioBufferSettings {
-                    num_channels: Some(NUM_CHANNELS),
-                    ..Default::default()
+                    ),
+                    pathing_simulation: None,
                 },
-            )
-            .unwrap();
-            let mut interleaved = vec![0.0; FRAME_SIZE * NUM_CHANNELS];
-            deinterleaved_buffer.interleave(&audio.context, &mut interleaved);
-            let source = AudioFrame::new(interleaved, 2);
+            );
 
-            audio.sink.append(source);
+            let simulation_outputs = source.get_outputs(simulation_flags);
+
+            *node = AmbisonicNode {
+                source_position,
+                listener_position,
+                settings: audio.settings.into(),
+                context: audio.context.clone(),
+                simulation_outputs: Some((&simulation_outputs).into()),
+                reverb_effect_params: Some(reverb_effect_params.deref().into()),
+            };
+            *decode_node = AmbisonicDecodeNode {
+                listener_orientation: listener_orientation.into(),
+                hrtf: audio.hrtf.clone().into(),
+                ambisonics_decode_effect: audio.ambisonics_decode_effect.clone().into(),
+            };
         }
     }
 }
@@ -885,6 +689,7 @@ impl bevy::app::Plugin for Plugin {
 
         app.insert_resource(Audio {
             context,
+            settings,
             scene,
             simulator,
             hrtf,
@@ -893,12 +698,8 @@ impl bevy::app::Plugin for Plugin {
             reverb_effect,
             ambisonics_encode_effect,
             ambisonics_decode_effect,
-            timer: Timer::new(
-                Duration::from_secs_f32(FRAME_SIZE as f32 / SAMPLING_RATE as f32),
-                TimerMode::Repeating,
-            ),
         });
 
-        app.add_systems(PostUpdate, Self::process_frame);
+        app.add_systems(PostUpdate, Self::prepare_seedling_data);
     }
 }
