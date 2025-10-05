@@ -63,7 +63,7 @@ impl From<&AudionimbusReflectionEffectParams> for audionimbus::ReflectionEffectP
             true_audio_next_slot: params.true_audio_next_slot as usize,
             reflection_effect_type: params.reflection_effect_type.clone().into(),
             impulse_response: params.impulse_response.0,
-            reverb_times: params.reverb_times.into(),
+            reverb_times: params.reverb_times,
             equalizer: params.equalizer.clone().into(),
             delay: params.delay as usize,
         }
@@ -79,7 +79,7 @@ impl From<&audionimbus::ReflectionEffectParams> for AudionimbusReflectionEffectP
             true_audio_next_slot: value.true_audio_next_slot as u64,
             reflection_effect_type: value.reflection_effect_type.into(),
             impulse_response: ReflectionEffectIR(value.impulse_response),
-            reverb_times: value.reverb_times.into(),
+            reverb_times: value.reverb_times,
             equalizer: value.equalizer.into(),
             delay: value.delay as u64,
         }
@@ -257,13 +257,13 @@ pub(crate) struct AudionimbusEqualizer<const N: usize>(pub(crate) [f32; N]);
 
 impl<const N: usize> From<AudionimbusEqualizer<N>> for audionimbus::Equalizer<N> {
     fn from(eq: AudionimbusEqualizer<N>) -> Self {
-        Self(eq.0.into())
+        Self(eq.0)
     }
 }
 
 impl<const N: usize> From<audionimbus::Equalizer<N>> for AudionimbusEqualizer<N> {
     fn from(eq: audionimbus::Equalizer<N>) -> Self {
-        Self(eq.0.into())
+        Self(eq.0)
     }
 }
 
@@ -361,7 +361,7 @@ impl From<Transform> for AudionimbusCoordinateSystem {
             right: listener_orientation_right.into(),
             up: listener_orientation_up.into(),
             ahead: listener_orientation_ahead.into(),
-            origin: listener_position.into(),
+            origin: listener_position,
         }
     }
 }

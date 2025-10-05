@@ -239,7 +239,7 @@ impl AudioNodeProcessor for AmbisonicProcessor {
         let reflection_effect_params = &simulation_outputs.reflections;
 
         let mut flat_inputs = [0.0; FRAME_SIZE];
-        flat_inputs.copy_from_slice(&inputs[0]);
+        flat_inputs.copy_from_slice(inputs[0]);
 
         let mut channel_ptrs = [std::ptr::null_mut(); AMBISONICS_NUM_CHANNELS];
         let input_buffer =
@@ -312,7 +312,7 @@ impl AudioNodeProcessor for AmbisonicProcessor {
         .unwrap();
         let _effect_state =
             self.reflection_effect
-                .apply(&reverb_effect_params, &input_buffer, &reverb_buffer);
+                .apply(reverb_effect_params, &input_buffer, &reverb_buffer);
 
         izip!(
             ambisonics_encode_buffer.channels(),
