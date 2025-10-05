@@ -130,10 +130,8 @@ impl AudioNodeProcessor for AmbisonicProcessor {
         let direct_effect_params = &simulation_outputs.direct;
         let reflection_effect_params = &simulation_outputs.reflections;
 
-        let mut flat_inputs = [0.0; NUM_CHANNELS * FRAME_SIZE];
-        for i in 0..NUM_CHANNELS {
-            flat_inputs[i * FRAME_SIZE..(i + 1) * FRAME_SIZE].copy_from_slice(&inputs[i]);
-        }
+        let mut flat_inputs = [0.0; FRAME_SIZE];
+        flat_inputs.copy_from_slice(&inputs[0]);
 
         let mut channel_ptrs = [std::ptr::null_mut(); AMBISONICS_NUM_CHANNELS];
         let input_buffer =
