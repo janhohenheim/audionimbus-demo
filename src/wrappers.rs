@@ -62,7 +62,7 @@ impl From<AudionimbusReflectionEffectParams> for audionimbus::ReflectionEffectPa
         Self {
             num_channels: params.num_channels as usize,
             impulse_response_size: params.impulse_response_size as usize,
-            true_audio_next_device: params.true_audio_next_device.clone().into(),
+            true_audio_next_device: params.true_audio_next_device.clone(),
             true_audio_next_slot: params.true_audio_next_slot as usize,
             reflection_effect_type: params.reflection_effect_type.clone().into(),
             impulse_response: params.impulse_response.deref().deref().clone(),
@@ -78,7 +78,7 @@ impl From<audionimbus::ReflectionEffectParams> for AudionimbusReflectionEffectPa
         Self {
             num_channels: value.num_channels as u64,
             impulse_response_size: value.impulse_response_size as u64,
-            true_audio_next_device: value.true_audio_next_device.clone().into(),
+            true_audio_next_device: value.true_audio_next_device.clone(),
             true_audio_next_slot: value.true_audio_next_slot as u64,
             reflection_effect_type: value.reflection_effect_type.into(),
             impulse_response: ArcGc::new(OwnedGc::new(value.impulse_response.clone())),
