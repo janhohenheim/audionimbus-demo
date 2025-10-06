@@ -314,7 +314,6 @@ dependencies = [
 name = "audionimbus-demo"
 version = "0.1.0"
 dependencies = [
- "arrayvec",
  "audionimbus",
  "audionimbus-sys",
  "bevy",
