@@ -26,7 +26,7 @@ pub(crate) struct AudionimbusReflectionEffectParams {
 
     /// The impulse response.
     #[diff(skip)]
-    pub(crate) impulse_response: ReflectionEffectIR,
+    pub(crate) impulse_response: audionimbus::ReflectionEffectIR,
 
     /// 3-band reverb decay times (RT60).
     pub(crate) reverb_times: [f32; 3],
@@ -85,11 +85,6 @@ impl From<&audionimbus::ReflectionEffectParams> for AudionimbusReflectionEffectP
         }
     }
 }
-
-#[derive(Debug, Clone, RealtimeClone, PartialEq)]
-pub(crate) struct ReflectionEffectIR(pub(crate) audionimbus_sys::IPLReflectionEffectIR);
-unsafe impl Send for ReflectionEffectIR {}
-unsafe impl Sync for ReflectionEffectIR {}
 
 /// Type of reflection effect algorithm to use.
 #[derive(Debug, Clone, RealtimeClone, Diff, Patch, PartialEq)]
