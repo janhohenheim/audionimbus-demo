@@ -1,4 +1,4 @@
-use std::{num::NonZeroU32, ops::Deref as _};
+use std::ops::Deref as _;
 
 use bevy::prelude::*;
 use bevy_seedling::{
@@ -219,6 +219,7 @@ impl AudioNodeProcessor for AmbisonicProcessor {
             return ProcessStatus::ClearAllOutputs;
         }
 
+        #[expect(clippy::needless_range_loop, reason = "more readable")]
         for frame in 0..proc_info.frames {
             self.frame_buffer.push(inputs[0][frame]);
             if self.frame_buffer.len() != self.frame_buffer.capacity() {
@@ -440,8 +441,8 @@ impl AudioNodeProcessor for AmbisonicDecodeProcessor {
         }
 
         for frame in 0..proc_info.frames {
-            for channel in 0..inputs.len() {
-                self.frame_buffer[channel].push(inputs[channel][frame]);
+            for (dst, src) in self.frame_buffer.iter_mut().zip(inputs) {
+                dst.push(src[frame]);
             }
             if self.frame_buffer[0].len() != self.frame_buffer[0].capacity() {
                 continue;
