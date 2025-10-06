@@ -219,7 +219,7 @@ impl AudioNodeProcessor for AmbisonicProcessor {
         // all silent, we can simply skip processing and save CPU time.
         if proc_info.in_silence_mask.all_channels_silent(inputs.len()) {
             // All inputs are silent.
-            return ProcessStatus::ClearAllOutputs;
+            //return ProcessStatus::ClearAllOutputs;
         }
 
         for frame in 0..proc_info.frames {

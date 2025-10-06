@@ -87,23 +87,6 @@ impl From<&audionimbus::ReflectionEffectParams> for AudionimbusReflectionEffectP
 }
 
 #[derive(Debug, Clone, RealtimeClone, PartialEq)]
-pub(crate) struct AudionimbusAmbisonicsDecodeEffect(audionimbus_sys::IPLAmbisonicsDecodeEffect);
-unsafe impl Send for AudionimbusAmbisonicsDecodeEffect {}
-unsafe impl Sync for AudionimbusAmbisonicsDecodeEffect {}
-
-impl From<audionimbus::AmbisonicsDecodeEffect> for AudionimbusAmbisonicsDecodeEffect {
-    fn from(effect: audionimbus::AmbisonicsDecodeEffect) -> Self {
-        Self(effect.raw_ptr())
-    }
-}
-
-impl From<AudionimbusAmbisonicsDecodeEffect> for audionimbus::AmbisonicsDecodeEffect {
-    fn from(effect: AudionimbusAmbisonicsDecodeEffect) -> Self {
-        Self::from_raw_ptr(effect.0)
-    }
-}
-
-#[derive(Debug, Clone, RealtimeClone, PartialEq)]
 pub(crate) struct ReflectionEffectIR(pub(crate) audionimbus_sys::IPLReflectionEffectIR);
 unsafe impl Send for ReflectionEffectIR {}
 unsafe impl Sync for ReflectionEffectIR {}
@@ -333,22 +316,5 @@ impl From<Transform> for AudionimbusCoordinateSystem {
             ahead: listener_orientation_ahead.into(),
             origin: listener_position,
         }
-    }
-}
-
-#[derive(Debug, Clone, RealtimeClone, PartialEq)]
-pub(crate) struct AudionimbusHrtf(pub(crate) audionimbus_sys::IPLHRTF);
-unsafe impl Send for AudionimbusHrtf {}
-unsafe impl Sync for AudionimbusHrtf {}
-
-impl From<audionimbus::Hrtf> for AudionimbusHrtf {
-    fn from(hrtf: audionimbus::Hrtf) -> Self {
-        Self(hrtf.raw_ptr())
-    }
-}
-
-impl From<AudionimbusHrtf> for audionimbus::Hrtf {
-    fn from(hrtf: AudionimbusHrtf) -> Self {
-        Self::from_raw_ptr(hrtf.0)
     }
 }
