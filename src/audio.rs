@@ -85,7 +85,7 @@ fn late_init(
 
     commands
         .spawn(SamplerPool(AudionimbusPool))
-        .chain_node_with(ambisonic_node, &[(0, 0), (1, 0)])
+        .chain_node(ambisonic_node)
         .chain_node_with(
             ambisonic_decode_node,
             &[
@@ -139,9 +139,9 @@ impl AudioNode for AmbisonicNode {
     fn info(&self, _config: &Self::Configuration) -> AudioNodeInfo {
         AudioNodeInfo::new()
             .debug_name("ambisonic node")
-            // 1 -> 9
+            // 2 -> 9
             .channel_config(ChannelConfig {
-                num_inputs: ChannelCount::MONO,
+                num_inputs: ChannelCount::STEREO,
                 num_outputs: ChannelCount::new(AMBISONICS_NUM_CHANNELS as u32).unwrap(),
             })
     }
@@ -223,7 +223,13 @@ impl AudioNodeProcessor for AmbisonicProcessor {
         }
 
         for frame in 0..proc_info.frames {
-            self.input_buffer.push(inputs[0][frame] * 0.5);
+            let mut downmixed = 0.0;
+            for channel in inputs {
+                downmixed += channel[frame];
+            }
+            downmixed /= inputs.len() as f32;
+
+            self.input_buffer.push(downmixed);
             if self.input_buffer.len() != self.input_buffer.capacity() {
                 continue;
             }
