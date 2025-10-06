@@ -233,12 +233,7 @@ impl AudioNodeProcessor for AmbisonicProcessor {
             if self.input_buffer.len() != self.input_buffer.capacity() {
                 continue;
             }
-            let input_len = self.input_buffer.len();
             // Buffer full, let's work!
-            let output_start = self.output_buffer[0].len();
-            for buff in &mut self.output_buffer {
-                buff.extend(std::iter::repeat_n(0.0, input_len));
-            }
 
             let (Some(simulation_outputs), Some(reverb_effect_params)) = (
                 self.simulation_outputs.as_ref(),
@@ -350,12 +345,7 @@ impl AudioNodeProcessor for AmbisonicProcessor {
             })
             .enumerate()
             .for_each(|(i, channel)| {
-                for (output, sample) in self.output_buffer[i][output_start..]
-                    .iter_mut()
-                    .zip(channel)
-                {
-                    *output = sample;
-                }
+                self.output_buffer[i].extend(channel);
             });
             self.input_buffer.clear();
         }
@@ -482,12 +472,7 @@ impl AudioNodeProcessor for AmbisonicDecodeProcessor {
             if self.input_buffer[0].len() != self.input_buffer[0].capacity() {
                 continue;
             }
-            let input_len = self.input_buffer[0].len();
             // Buffer full
-            let output_start = self.output_buffer[0].len();
-            for buff in &mut self.output_buffer {
-                buff.extend(std::iter::repeat_n(0.0, input_len));
-            }
 
             let mut mix_container = [0.0; AMBISONICS_NUM_CHANNELS * FRAME_SIZE];
             for channel in 0..AMBISONICS_NUM_CHANNELS {
@@ -533,8 +518,8 @@ impl AudioNodeProcessor for AmbisonicDecodeProcessor {
 
             let left = &staging_container[..FRAME_SIZE];
             let right = &staging_container[FRAME_SIZE..];
-            self.output_buffer[0][output_start..].copy_from_slice(left);
-            self.output_buffer[1][output_start..].copy_from_slice(right);
+            self.output_buffer[0].extend(left);
+            self.output_buffer[1].extend(right);
             for buff in &mut self.input_buffer {
                 buff.clear();
             }
