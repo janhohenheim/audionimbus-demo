@@ -215,12 +215,7 @@ impl AudioNodeProcessor for AmbisonicProcessor {
             self.params.apply(patch);
         }
 
-        // Firewheel will inform you if an input channel is silent. If they're
-        // all silent, we can simply skip processing and save CPU time.
-        if proc_info.in_silence_mask.all_channels_silent(inputs.len()) {
-            // All inputs are silent.
-            //return ProcessStatus::ClearAllOutputs;
-        }
+        // Don't early return on silent inputs: there is probably reverb left
 
         for frame in 0..proc_info.frames {
             let mut downmixed = 0.0;
@@ -459,10 +454,7 @@ impl AudioNodeProcessor for AmbisonicDecodeProcessor {
             self.params.apply(patch);
         }
 
-        // Firewheel will inform you if an input channel is silent. If they're
-        // all silent, we can simply skip processing and save CPU time.
         if proc_info.in_silence_mask.all_channels_silent(inputs.len()) {
-            // All inputs are silent.
             return ProcessStatus::ClearAllOutputs;
         }
 
