@@ -155,6 +155,7 @@ impl AudioNode for AmbisonicNode {
             sampling_rate: cx.stream_info.sample_rate.get() as usize,
             frame_size: FRAME_SIZE,
         };
+        let buffer_size = cx.stream_info.max_block_frames.get() as usize;
         AmbisonicProcessor {
             params: self.clone(),
             ambisonics_encode_effect: audionimbus::AmbisonicsEncodeEffect::try_new(
@@ -185,7 +186,8 @@ impl AudioNode for AmbisonicNode {
                 .reverb_effect_params
                 .as_ref()
                 .map(|params| params.into()),
-            frame_buffer: Vec::with_capacity(FRAME_SIZE),
+            input_buffer: Vec::with_capacity(FRAME_SIZE),
+            output_buffer: Vec::with_capacity(buffer_size.max(FRAME_SIZE)),
         }
     }
 }
@@ -197,7 +199,8 @@ struct AmbisonicProcessor {
     reflection_effect: audionimbus::ReflectionEffect,
     reverb_effect_params: Option<audionimbus::ReflectionEffectParams>,
     simulation_outputs: Option<AudionimbusSimulationOutputs>,
-    frame_buffer: Vec<f32>,
+    input_buffer: Vec<f32>,
+    output_buffer: Vec<[f32; AMBISONICS_NUM_CHANNELS]>,
 }
 
 impl AudioNodeProcessor for AmbisonicProcessor {
@@ -221,11 +224,17 @@ impl AudioNodeProcessor for AmbisonicProcessor {
 
         #[expect(clippy::needless_range_loop, reason = "more readable")]
         for frame in 0..proc_info.frames {
-            self.frame_buffer.push(inputs[0][frame]);
-            if self.frame_buffer.len() != self.frame_buffer.capacity() {
+            self.input_buffer.push(inputs[0][frame]);
+            if self.input_buffer.len() != self.input_buffer.capacity() {
                 continue;
             }
+            let input_len = self.input_buffer.len();
             // Buffer full, let's work!
+            let output_start = self.output_buffer.len();
+            self.output_buffer.extend(std::iter::repeat_n(
+                [0.0; AMBISONICS_NUM_CHANNELS],
+                input_len,
+            ));
 
             let (Some(simulation_outputs), Some(reverb_effect_params)) = (
                 self.simulation_outputs.as_ref(),
@@ -241,7 +250,7 @@ impl AudioNodeProcessor for AmbisonicProcessor {
 
             let mut channel_ptrs = [std::ptr::null_mut(); AMBISONICS_NUM_CHANNELS];
             let input_buffer =
-                audionimbus::AudioBuffer::try_with_data(&self.frame_buffer, &mut channel_ptrs)
+                audionimbus::AudioBuffer::try_with_data(&self.input_buffer, &mut channel_ptrs)
                     .unwrap();
 
             let mut direct_container = [0.0; FRAME_SIZE];
@@ -335,13 +344,25 @@ impl AudioNodeProcessor for AmbisonicProcessor {
             })
             .enumerate()
             .for_each(|(i, channel)| {
-                for (output, sample) in outputs[i].iter_mut().zip(channel) {
+                for (output, sample) in self.output_buffer[output_start..][i]
+                    .iter_mut()
+                    .zip(channel)
+                {
                     *output += sample;
                 }
             });
-            self.frame_buffer.clear();
+            self.input_buffer.clear();
         }
 
+        for (i, channels) in self
+            .output_buffer
+            .drain(..proc_info.frames.min(self.output_buffer.len()))
+            .enumerate()
+        {
+            for j in 0..AMBISONICS_NUM_CHANNELS {
+                outputs[j][i] = channels[j];
+            }
+        }
         ProcessStatus::outputs_not_silent()
     }
 }
@@ -384,6 +405,7 @@ impl AudioNode for AmbisonicDecodeNode {
             sampling_rate: cx.stream_info.sample_rate.get() as usize,
             frame_size: FRAME_SIZE,
         };
+        let buffer_size = cx.stream_info.max_block_frames.get() as usize;
         let hrtf = audionimbus::Hrtf::try_new(
             &self.context,
             &settings,
@@ -408,7 +430,8 @@ impl AudioNode for AmbisonicDecodeNode {
                 },
             )
             .unwrap(),
-            frame_buffer: std::array::from_fn(|_| Vec::with_capacity(FRAME_SIZE)),
+            input_buffer: std::array::from_fn(|_| Vec::with_capacity(FRAME_SIZE)),
+            output_buffer: Vec::with_capacity(buffer_size.max(FRAME_SIZE)),
         }
     }
 }
@@ -418,7 +441,8 @@ struct AmbisonicDecodeProcessor {
     listener_orientation: audionimbus::CoordinateSystem,
     hrtf: audionimbus::Hrtf,
     ambisonics_decode_effect: audionimbus::AmbisonicsDecodeEffect,
-    frame_buffer: [Vec<f32>; AMBISONICS_NUM_CHANNELS],
+    input_buffer: [Vec<f32>; AMBISONICS_NUM_CHANNELS],
+    output_buffer: Vec<[f32; 2]>,
 }
 
 impl AudioNodeProcessor for AmbisonicDecodeProcessor {
@@ -441,13 +465,17 @@ impl AudioNodeProcessor for AmbisonicDecodeProcessor {
         }
 
         for frame in 0..proc_info.frames {
-            for (dst, src) in self.frame_buffer.iter_mut().zip(inputs) {
+            for (dst, src) in self.input_buffer.iter_mut().zip(inputs) {
                 dst.push(src[frame]);
             }
-            if self.frame_buffer[0].len() != self.frame_buffer[0].capacity() {
+            if self.input_buffer[0].len() != self.input_buffer[0].capacity() {
                 continue;
             }
+            let input_len = self.input_buffer.len();
             // Buffer full
+            let output_start = self.output_buffer.len();
+            self.output_buffer
+                .extend(std::iter::repeat_n([0.0; 2], input_len));
 
             let mut mix_container = [0.0; AMBISONICS_NUM_CHANNELS];
             for channel in 0..AMBISONICS_NUM_CHANNELS {
@@ -491,14 +519,24 @@ impl AudioNodeProcessor for AmbisonicDecodeProcessor {
                 &staging_buffer,
             );
 
-            for i in 0..outputs.len() {
-                let src = &staging_container[i * FRAME_SIZE..(i + 1) * FRAME_SIZE];
-                for (j, src) in src.iter().enumerate() {
-                    outputs[i][j] += *src;
+            for dst in &mut self.output_buffer[output_start..] {
+                for i in 0..2 {
+                    let src = &staging_container[i * FRAME_SIZE..(i + 1) * FRAME_SIZE];
+                    dst.copy_from_slice(src);
                 }
             }
-            for buff in &mut self.frame_buffer {
+            for buff in &mut self.input_buffer {
                 buff.clear();
+            }
+        }
+
+        for (i, channels) in self
+            .output_buffer
+            .drain(..proc_info.frames.min(self.output_buffer.len()))
+            .enumerate()
+        {
+            for j in 0..2 {
+                outputs[j][i] = channels[j];
             }
         }
         ProcessStatus::outputs_not_silent()
