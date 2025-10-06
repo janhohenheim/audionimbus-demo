@@ -85,7 +85,7 @@ fn late_init(
 
     commands
         .spawn(SamplerPool(AudionimbusPool))
-        .chain_node(ambisonic_node)
+        .chain_node_with(ambisonic_node, &[(0, 0)])
         .chain_node_with(
             ambisonic_decode_node,
             &[
@@ -474,10 +474,10 @@ impl AudioNodeProcessor for AmbisonicDecodeProcessor {
             self.output_buffer
                 .extend(std::iter::repeat_n([0.0; 2], input_len));
 
-            let mut mix_container = [0.0; AMBISONICS_NUM_CHANNELS];
+            let mut mix_container = [0.0; AMBISONICS_NUM_CHANNELS * FRAME_SIZE];
             for channel in 0..AMBISONICS_NUM_CHANNELS {
                 mix_container[(channel * FRAME_SIZE)..(channel * FRAME_SIZE + FRAME_SIZE)]
-                    .copy_from_slice(inputs[channel]);
+                    .copy_from_slice(&self.input_buffer[channel]);
             }
             let mut channel_ptrs = [std::ptr::null_mut(); AMBISONICS_NUM_CHANNELS];
             let settings = audionimbus::AudioBufferSettings {
