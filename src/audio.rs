@@ -344,11 +344,8 @@ impl AudioNodeProcessor for AmbisonicProcessor {
             })
             .enumerate()
             .for_each(|(i, channel)| {
-                for (output, sample) in self.output_buffer[output_start..][i]
-                    .iter_mut()
-                    .zip(channel)
-                {
-                    *output += sample;
+                for (output, sample) in self.output_buffer[output_start..].iter_mut().zip(channel) {
+                    output[i] = sample;
                 }
             });
             self.input_buffer.clear();
@@ -519,11 +516,11 @@ impl AudioNodeProcessor for AmbisonicDecodeProcessor {
                 &staging_buffer,
             );
 
-            for dst in &mut self.output_buffer[output_start..] {
-                for i in 0..2 {
-                    let src = &staging_container[i * FRAME_SIZE..(i + 1) * FRAME_SIZE];
-                    dst.copy_from_slice(src);
-                }
+            let left = &staging_container[..FRAME_SIZE];
+            let right = &staging_container[FRAME_SIZE..];
+            for (i, dst) in self.output_buffer[output_start..].iter_mut().enumerate() {
+                dst[0] = left[i];
+                dst[1] = right[i];
             }
             for buff in &mut self.input_buffer {
                 buff.clear();
