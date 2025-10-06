@@ -1,4 +1,4 @@
-use std::ops::Deref as _;
+use std::{num::NonZeroU32, ops::Deref as _};
 
 use bevy::prelude::*;
 use bevy_seedling::{
@@ -155,7 +155,6 @@ impl AudioNode for AmbisonicNode {
             sampling_rate: cx.stream_info.sample_rate.get() as usize,
             frame_size: FRAME_SIZE,
         };
-        let buffer_size = cx.stream_info.max_block_frames.get() as usize;
         AmbisonicProcessor {
             params: self.clone(),
             ambisonics_encode_effect: audionimbus::AmbisonicsEncodeEffect::try_new(
@@ -187,7 +186,11 @@ impl AudioNode for AmbisonicNode {
                 .as_ref()
                 .map(|params| params.clone().into()),
             input_buffer: Vec::with_capacity(FRAME_SIZE),
-            output_buffer: std::array::from_fn(|_| Vec::with_capacity(buffer_size.max(FRAME_SIZE))),
+            output_buffer: std::array::from_fn(|_| {
+                Vec::with_capacity(cx.stream_info.max_block_frames.get() as usize * 2)
+            }),
+            max_block_frames: cx.stream_info.max_block_frames,
+            started_draining: false,
         }
     }
 }
@@ -201,6 +204,8 @@ struct AmbisonicProcessor {
     simulation_outputs: Option<AudionimbusSimulationOutputs>,
     input_buffer: Vec<f32>,
     output_buffer: [Vec<f32>; AMBISONICS_NUM_CHANNELS],
+    max_block_frames: NonZeroU32,
+    started_draining: bool,
 }
 
 impl AudioNodeProcessor for AmbisonicProcessor {
@@ -355,11 +360,16 @@ impl AudioNodeProcessor for AmbisonicProcessor {
             self.input_buffer.clear();
         }
 
-        if self.output_buffer[0].len() < outputs[0].len() {
-            return ProcessStatus::ClearAllOutputs;
+        if !self.started_draining {
+            if (self.output_buffer[0].len() as f32) < self.max_block_frames.get() as f32 * 1.5 {
+                return ProcessStatus::ClearAllOutputs;
+            }
+            self.started_draining = true;
         }
+
+        let output_len = outputs[0].len();
         for (src, dst) in self.output_buffer.iter_mut().zip(outputs.iter_mut()) {
-            for (i, out) in src.drain(..proc_info.frames.min(src.len())).enumerate() {
+            for (i, out) in src.drain(..output_len).enumerate() {
                 dst[i] = out;
             }
         }
@@ -432,6 +442,8 @@ impl AudioNode for AmbisonicDecodeNode {
             .unwrap(),
             input_buffer: std::array::from_fn(|_| Vec::with_capacity(FRAME_SIZE)),
             output_buffer: std::array::from_fn(|_| Vec::with_capacity(buffer_size.max(FRAME_SIZE))),
+            max_block_frames: cx.stream_info.max_block_frames,
+            started_draining: false,
         }
     }
 }
@@ -443,6 +455,8 @@ struct AmbisonicDecodeProcessor {
     ambisonics_decode_effect: audionimbus::AmbisonicsDecodeEffect,
     input_buffer: [Vec<f32>; AMBISONICS_NUM_CHANNELS],
     output_buffer: [Vec<f32>; 2],
+    max_block_frames: NonZeroU32,
+    started_draining: bool,
 }
 
 impl AudioNodeProcessor for AmbisonicDecodeProcessor {
@@ -526,12 +540,16 @@ impl AudioNodeProcessor for AmbisonicDecodeProcessor {
             }
         }
 
-        if self.output_buffer[0].len() < outputs[0].len() {
-            return ProcessStatus::ClearAllOutputs;
+        if !self.started_draining {
+            if (self.output_buffer[0].len() as f32) < self.max_block_frames.get() as f32 * 1.5 {
+                return ProcessStatus::ClearAllOutputs;
+            }
+            self.started_draining = true;
         }
 
+        let output_len = outputs[0].len();
         for (src, dst) in self.output_buffer.iter_mut().zip(outputs.iter_mut()) {
-            for (i, out) in src.drain(..proc_info.frames.min(src.len())).enumerate() {
+            for (i, out) in src.drain(..output_len).enumerate() {
                 dst[i] = out;
             }
         }
