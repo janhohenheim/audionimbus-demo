@@ -1,11 +1,11 @@
-use std::ops::Deref as _;
+use std::{num::NonZeroU32, ops::Deref as _};
 
 use bevy::prelude::*;
 use bevy_seedling::{
     context::StreamStartEvent,
     firewheel::diff::{Diff, Patch},
     node::RegisterNode as _,
-    prelude::ChannelCount,
+    prelude::*,
 };
 use firewheel::{
     channel_config::ChannelConfig,
@@ -29,7 +29,7 @@ pub(super) fn plugin(app: &mut App) {
         PostUpdate,
         prepare_seedling_data.after(TransformSystems::Propagate),
     );
-    app.add_observer(init_simulator);
+    app.add_observer(late_init);
 }
 
 pub(crate) fn setup_audionimbus(mut commands: Commands) {
@@ -38,17 +38,21 @@ pub(crate) fn setup_audionimbus(mut commands: Commands) {
     commands.insert_resource(AudionimbusContext(context));
 }
 
+#[derive(PoolLabel, PartialEq, Eq, Debug, Hash, Clone)]
+pub(crate) struct AudionimbusPool;
+
 #[derive(Event)]
 pub(crate) struct AudionimbusReady;
 
-fn init_simulator(
+fn late_init(
     stream_start: On<StreamStartEvent>,
     mut commands: Commands,
     context: Res<AudionimbusContext>,
 ) {
+    let sample_rate = stream_start.sample_rate;
     let mut simulator = audionimbus::Simulator::builder(
         audionimbus::SceneParams::Default,
-        stream_start.sample_rate.get() as usize,
+        sample_rate.get() as usize,
         FRAME_SIZE,
     )
     .with_direct(audionimbus::DirectSimulationSettings {
@@ -75,6 +79,31 @@ fn init_simulator(
     simulator.commit();
     commands.insert_resource(ListenerSource(listener_source));
     commands.insert_resource(AudionimbusSimulator(simulator));
+
+    let ambisonic_node = AmbisonicNode::new(context.clone());
+    let ambisonic_processor = AmbisonicProcessor::new(ambisonic_node, sample_rate);
+    let ambisonic_decode_node = AmbisonicDecodeNode::new(context.clone());
+    let ambisonic_decode_processor =
+        AmbisonicDecodeProcessor::new(ambisonic_decode_node, sample_rate);
+
+    commands
+        .spawn(SamplerPool(AudionimbusPool))
+        .chain_node(ambisonic_processor)
+        .chain_node_with(
+            ambisonic_decode_processor,
+            &[
+                (0, 0),
+                (1, 1),
+                (2, 2),
+                (3, 3),
+                (4, 4),
+                (5, 5),
+                (6, 6),
+                (7, 7),
+                (8, 8),
+            ],
+        );
+
     commands.trigger(AudionimbusReady);
 }
 
@@ -95,6 +124,18 @@ pub(crate) struct AmbisonicNode {
     pub(crate) reverb_effect_params: Option<AudionimbusReflectionEffectParams>,
 }
 
+impl AmbisonicNode {
+    pub(crate) fn new(context: audionimbus::Context) -> Self {
+        Self {
+            context,
+            source_position: default(),
+            listener_position: default(),
+            simulation_outputs: default(),
+            reverb_effect_params: default(),
+        }
+    }
+}
+
 impl AudioNode for AmbisonicNode {
     type Configuration = EmptyConfig;
 
@@ -113,42 +154,7 @@ impl AudioNode for AmbisonicNode {
         _config: &Self::Configuration,
         cx: ConstructProcessorContext,
     ) -> impl AudioNodeProcessor {
-        let settings = audionimbus::AudioSettings {
-            sampling_rate: cx.stream_info.sample_rate.get() as usize,
-            frame_size: FRAME_SIZE,
-        };
-        AmbisonicProcessor {
-            params: self.clone(),
-            ambisonics_encode_effect: audionimbus::AmbisonicsEncodeEffect::try_new(
-                &self.context,
-                &settings,
-                &audionimbus::AmbisonicsEncodeEffectSettings {
-                    max_order: AMBISONICS_ORDER,
-                },
-            )
-            .unwrap(),
-            direct_effect: audionimbus::DirectEffect::try_new(
-                &self.context,
-                &settings,
-                &audionimbus::DirectEffectSettings { num_channels: 1 },
-            )
-            .unwrap(),
-            reflection_effect: audionimbus::ReflectionEffect::try_new(
-                &self.context,
-                &settings,
-                &audionimbus::ReflectionEffectSettings::Convolution {
-                    impulse_response_size: (2 * cx.stream_info.sample_rate.get()) as usize,
-                    num_channels: AMBISONICS_NUM_CHANNELS,
-                },
-            )
-            .unwrap(),
-            simulation_outputs: self.simulation_outputs.clone(),
-            reverb_effect_params: self
-                .reverb_effect_params
-                .as_ref()
-                .map(|params| params.into()),
-            frame_buffer: Vec::with_capacity(FRAME_SIZE),
-        }
+        AmbisonicProcessor::new(self.clone(), cx.stream_info.sample_rate)
     }
 }
 
@@ -160,6 +166,47 @@ struct AmbisonicProcessor {
     reverb_effect_params: Option<audionimbus::ReflectionEffectParams>,
     simulation_outputs: Option<AudionimbusSimulationOutputs>,
     frame_buffer: Vec<f32>,
+}
+
+impl AmbisonicProcessor {
+    fn new(node: AmbisonicNode, sampling_rate: NonZeroU32) -> Self {
+        let settings = audionimbus::AudioSettings {
+            sampling_rate: sampling_rate.get() as usize,
+            frame_size: FRAME_SIZE,
+        };
+        Self {
+            params: node.clone(),
+            ambisonics_encode_effect: audionimbus::AmbisonicsEncodeEffect::try_new(
+                &node.context,
+                &settings,
+                &audionimbus::AmbisonicsEncodeEffectSettings {
+                    max_order: AMBISONICS_ORDER,
+                },
+            )
+            .unwrap(),
+            direct_effect: audionimbus::DirectEffect::try_new(
+                &node.context,
+                &settings,
+                &audionimbus::DirectEffectSettings { num_channels: 1 },
+            )
+            .unwrap(),
+            reflection_effect: audionimbus::ReflectionEffect::try_new(
+                &node.context,
+                &settings,
+                &audionimbus::ReflectionEffectSettings::Convolution {
+                    impulse_response_size: 2 * settings.sampling_rate,
+                    num_channels: AMBISONICS_NUM_CHANNELS,
+                },
+            )
+            .unwrap(),
+            simulation_outputs: node.simulation_outputs.clone(),
+            reverb_effect_params: node
+                .reverb_effect_params
+                .as_ref()
+                .map(|params| params.into()),
+            frame_buffer: Vec::with_capacity(FRAME_SIZE),
+        }
+    }
 }
 
 impl AudioNodeProcessor for AmbisonicProcessor {
@@ -314,6 +361,15 @@ pub(crate) struct AmbisonicDecodeNode {
     pub(crate) context: audionimbus::Context,
 }
 
+impl AmbisonicDecodeNode {
+    pub(crate) fn new(context: audionimbus::Context) -> Self {
+        Self {
+            context,
+            listener_orientation: default(),
+        }
+    }
+}
+
 impl AudioNode for AmbisonicDecodeNode {
     type Configuration = EmptyConfig;
 
@@ -332,12 +388,26 @@ impl AudioNode for AmbisonicDecodeNode {
         _config: &Self::Configuration,
         cx: ConstructProcessorContext,
     ) -> impl AudioNodeProcessor {
+        AmbisonicDecodeProcessor::new(self.clone(), cx.stream_info.sample_rate)
+    }
+}
+
+struct AmbisonicDecodeProcessor {
+    params: AmbisonicDecodeNode,
+    listener_orientation: audionimbus::CoordinateSystem,
+    hrtf: audionimbus::Hrtf,
+    ambisonics_decode_effect: audionimbus::AmbisonicsDecodeEffect,
+    frame_buffer: [Vec<f32>; AMBISONICS_NUM_CHANNELS],
+}
+
+impl AmbisonicDecodeProcessor {
+    fn new(node: AmbisonicDecodeNode, sampling_rate: NonZeroU32) -> Self {
         let settings = audionimbus::AudioSettings {
-            sampling_rate: cx.stream_info.sample_rate.get() as usize,
+            sampling_rate: sampling_rate.get() as usize,
             frame_size: FRAME_SIZE,
         };
         let hrtf = audionimbus::Hrtf::try_new(
-            &self.context,
+            &node.context,
             &settings,
             &audionimbus::HrtfSettings {
                 volume_normalization: audionimbus::VolumeNormalization::RootMeanSquared,
@@ -347,11 +417,11 @@ impl AudioNode for AmbisonicDecodeNode {
         .unwrap();
 
         AmbisonicDecodeProcessor {
-            params: self.clone(),
-            listener_orientation: self.listener_orientation.into(),
+            params: node.clone(),
+            listener_orientation: node.listener_orientation.into(),
             hrtf: hrtf.clone(),
             ambisonics_decode_effect: audionimbus::AmbisonicsDecodeEffect::try_new(
-                &self.context,
+                &node.context,
                 &settings,
                 &audionimbus::AmbisonicsDecodeEffectSettings {
                     max_order: AMBISONICS_ORDER,
@@ -363,14 +433,6 @@ impl AudioNode for AmbisonicDecodeNode {
             frame_buffer: std::array::from_fn(|_| Vec::with_capacity(FRAME_SIZE)),
         }
     }
-}
-
-struct AmbisonicDecodeProcessor {
-    params: AmbisonicDecodeNode,
-    listener_orientation: audionimbus::CoordinateSystem,
-    hrtf: audionimbus::Hrtf,
-    ambisonics_decode_effect: audionimbus::AmbisonicsDecodeEffect,
-    frame_buffer: [Vec<f32>; AMBISONICS_NUM_CHANNELS],
 }
 
 impl AudioNodeProcessor for AmbisonicDecodeProcessor {

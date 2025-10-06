@@ -7,7 +7,7 @@ use bevy::{
 use bevy_seedling::prelude::*;
 
 use crate::{
-    audio::{AudionimbusContext, AudionimbusReady, AudionimbusSimulator},
+    audio::{AudionimbusContext, AudionimbusPool, AudionimbusReady, AudionimbusSimulator},
     camera_controller::CameraController,
 };
 
@@ -73,19 +73,7 @@ fn setup(
             MeshMaterial3d(sphere_material.clone()),
             source_position,
             SamplePlayer::new(assets.load("selfless_courage.ogg")).looping(),
-            sample_effects![
-                audio::AmbisonicNode {
-                    context: context.clone(),
-                    source_position: default(),
-                    listener_position: default(),
-                    simulation_outputs: default(),
-                    reverb_effect_params: default()
-                },
-                audio::AmbisonicDecodeNode {
-                    listener_orientation: default(),
-                    context: context.clone(),
-                }
-            ],
+            AudionimbusPool,
         ));
         commands.spawn((
             source_position,
