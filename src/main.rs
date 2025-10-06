@@ -25,9 +25,9 @@ fn main() {
                 primary_window: Some(Window {
                     title: "audionimbus".to_string(),
                     mode: bevy::window::WindowMode::BorderlessFullscreen(MonitorSelection::Primary),
-                    ..Default::default()
+                    ..default()
                 }),
-                ..Default::default()
+                ..default()
             }),
             SeedlingPlugin::default(),
         ))
@@ -89,7 +89,7 @@ fn setup(
                     blue: 1.0,
                     alpha: 1.0,
                 }),
-                ..Default::default()
+                ..default()
             },
         ));
 
@@ -103,7 +103,7 @@ fn setup(
                     blue: 1.0,
                     alpha: 1.0,
                 }),
-                ..Default::default()
+                ..default()
             },
         ));
     }
@@ -131,7 +131,7 @@ fn setup(
                     blue: 1.0,
                     alpha: 1.0,
                 }),
-                ..Default::default()
+                ..default()
             },
         ));
     }
@@ -159,7 +159,7 @@ fn setup(
                     blue: 1.0,
                     alpha: 1.0,
                 }),
-                ..Default::default()
+                ..default()
             },
         ));
     }
@@ -269,7 +269,7 @@ fn setup(
 
     commands.insert_resource(AmbientLight {
         brightness: 200.0,
-        ..Default::default()
+        ..default()
     });
 
     commands.spawn((
