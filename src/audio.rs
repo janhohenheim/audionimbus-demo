@@ -41,6 +41,9 @@ pub(crate) fn setup_audionimbus(mut commands: Commands) {
 #[derive(PoolLabel, PartialEq, Eq, Debug, Hash, Clone)]
 pub(crate) struct AudionimbusPool;
 
+#[derive(NodeLabel, PartialEq, Eq, Debug, Hash, Clone)]
+struct AudionimbusBus;
+
 #[derive(Event)]
 pub(crate) struct AudionimbusReady;
 
@@ -84,7 +87,7 @@ fn late_init(
     let ambisonic_decode_node = AmbisonicDecodeNode::new(context.clone());
 
     commands
-        .spawn(SamplerPool(AudionimbusPool))
+        .spawn((VolumeNode::default(), AudionimbusBus))
         .chain_node(ambisonic_node)
         .chain_node_with(
             ambisonic_decode_node,
@@ -100,6 +103,10 @@ fn late_init(
                 (8, 8),
             ],
         );
+
+    commands
+        .spawn(SamplerPool(AudionimbusPool))
+        .connect(AudionimbusBus);
 
     commands.trigger(AudionimbusReady);
 }
@@ -634,6 +641,8 @@ fn prepare_seedling_data(
     let reverb_effect_params = reverb_simulation_outputs.reflections();
 
     for (mut node, mut decode_node, mut source, transform) in nodes.iter_mut() {
+        info!("entry");
+
         let transform = transform.compute_transform();
         let source_position = transform.translation;
 
@@ -681,5 +690,6 @@ fn prepare_seedling_data(
             listener_orientation: listener_orientation.into(),
             context: context.clone(),
         };
+        info!("success!");
     }
 }
