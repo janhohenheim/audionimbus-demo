@@ -11,7 +11,7 @@ readme = "README.md"
 [dependencies]
 audionimbus = { version = "0.8.3", path = "../audionimbus/audionimbus" }
 audionimbus-sys = { version = "4.7.1-rc.1", path = "../audionimbus/audionimbus-sys" }
-bevy_seedling = "0.6.0-rc.1"
+bevy_seedling = { git = "https://github.com/corvusprudens/bevy_seedling", branch = "v0.6.0" }
 bevy = { version = "0.17.0-rc.1", default-features = false, features = [
   "std",
   "async_executor",
@@ -75,3 +75,13 @@ reverb = []
 [lints.clippy]
 too_many_arguments = "allow"
 type_complexity = "allow"
+
+[profile.dev.package."*"]
+inherits = "dev"
+opt-level = 3
+
+[profile.dev]
+opt-level = 0
+
+[patch.crates-io]
+firewheel = { git = "https://github.com/corvusprudens/firewheel", branch = "freeverb" }

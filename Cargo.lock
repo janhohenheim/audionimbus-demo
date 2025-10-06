@@ -1234,9 +1234,8 @@ dependencies = [
 
 [[package]]
 name = "bevy_seedling"
-version = "0.6.0-rc.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d77d917b8614ed113ab8fe6f6ed4ce2f4ec1168fbd83cd800d6629d9f66c6d4c"
+version = "0.6.0"
+source = "git+https://github.com/corvusprudens/bevy_seedling?branch=v0.6.0#e215d031ef66d4d58b33b4a55f060dc1b845a445"
 dependencies = [
  "bevy_app",
  "bevy_asset",
@@ -1261,8 +1260,7 @@ dependencies = [
 [[package]]
 name = "bevy_seedling_macros"
 version = "0.6.0-rc.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7811662e6b6c8c921be03c32f2a18f401ffba9759783466cd2ae64c288f04e4e"
+source = "git+https://github.com/corvusprudens/bevy_seedling?branch=v0.6.0#e215d031ef66d4d58b33b4a55f060dc1b845a445"
 dependencies = [
  "bevy_macro_utils",
  "proc-macro2",
@@ -2295,7 +2293,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.1",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2364,8 +2362,7 @@ checksum = "0399f9d26e5191ce32c498bebd31e7a3ceabc2745f0ac54af3f335126c3f24b3"
 [[package]]
 name = "firewheel"
 version = "0.8.0-rc.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c30e4851b2b07981e34b8618ca80582ac84690dcb3e0fb887c0c621f6ec1fc4"
+source = "git+https://github.com/corvusprudens/firewheel?branch=freeverb#76e01f3a852e3d65bb39330c1b8ebfb60b4e2d49"
 dependencies = [
  "firewheel-core",
  "firewheel-cpal",
@@ -2378,8 +2375,7 @@ dependencies = [
 [[package]]
 name = "firewheel-core"
 version = "0.8.0-rc.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57060f95f83e190a005ca880261759a6f5ea3581d980d2ca4f4e45ee630a01d8"
+source = "git+https://github.com/corvusprudens/firewheel?branch=freeverb#76e01f3a852e3d65bb39330c1b8ebfb60b4e2d49"
 dependencies = [
  "arrayvec",
  "bevy_ecs",
@@ -2404,8 +2400,7 @@ dependencies = [
 [[package]]
 name = "firewheel-cpal"
 version = "0.8.0-rc.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c39415876188eefc4904ab245327cfbfd765e8fac9fd2335d368a732ab8c9c48"
+source = "git+https://github.com/corvusprudens/firewheel?branch=freeverb#76e01f3a852e3d65bb39330c1b8ebfb60b4e2d49"
 dependencies = [
  "bevy_platform",
  "cpal 0.16.0",
@@ -2421,8 +2416,7 @@ dependencies = [
 [[package]]
 name = "firewheel-graph"
 version = "0.8.0-rc.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a1747d80ceb96f8d28c6970765fe5610af5eac15c36ba064b1bc455d6ac4bcb"
+source = "git+https://github.com/corvusprudens/firewheel?branch=freeverb#76e01f3a852e3d65bb39330c1b8ebfb60b4e2d49"
 dependencies = [
  "arrayvec",
  "bevy_platform",
@@ -2451,8 +2445,7 @@ dependencies = [
 [[package]]
 name = "firewheel-macros"
 version = "0.8.0-rc.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ae02e3f1eeab5320d636ca30080a51eabdd7b2faaadea6b01a6bbb80decc030"
+source = "git+https://github.com/corvusprudens/firewheel?branch=freeverb#76e01f3a852e3d65bb39330c1b8ebfb60b4e2d49"
 dependencies = [
  "bevy_macro_utils",
  "proc-macro2",
@@ -2464,8 +2457,7 @@ dependencies = [
 [[package]]
 name = "firewheel-nodes"
 version = "0.8.0-rc.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56ae27044fb15a43600e6098c6e00d5f46f3b9354656b0531b135f3ac3f79e56"
+source = "git+https://github.com/corvusprudens/firewheel?branch=freeverb#76e01f3a852e3d65bb39330c1b8ebfb60b4e2d49"
 dependencies = [
  "bevy_ecs",
  "bevy_platform",
@@ -2479,8 +2471,7 @@ dependencies = [
 [[package]]
 name = "firewheel-pool"
 version = "0.8.0-rc.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "183e43b4d20597b1a7dd99f797455f83822aa9d01e88703d5fa31e91dcdd9f4c"
+source = "git+https://github.com/corvusprudens/firewheel?branch=freeverb#76e01f3a852e3d65bb39330c1b8ebfb60b4e2d49"
 dependencies = [
  "firewheel-core",
  "firewheel-graph",
@@ -4307,7 +4298,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.11.0",
- "windows-sys 0.61.1",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5551,7 +5542,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.1",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

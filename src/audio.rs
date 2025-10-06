@@ -84,22 +84,16 @@ fn late_init(
     let ambisonic_decode_node = AmbisonicDecodeNode::new(context.clone());
 
     commands
-        .spawn(SamplerPool(AudionimbusPool))
-        .chain_node(ambisonic_node)
-        .chain_node_with(
-            ambisonic_decode_node,
-            &[
-                (0, 0),
-                (1, 1),
-                (2, 2),
-                (3, 3),
-                (4, 4),
-                (5, 5),
-                (6, 6),
-                (7, 7),
-                (8, 8),
-            ],
-        );
+        .spawn((
+            SamplerPool(AudionimbusPool),
+            VolumeNode::default(),
+            VolumeNodeConfig {
+                channels: NonZeroChannelCount::new(AMBISONICS_NUM_CHANNELS as u32).unwrap(),
+            },
+            sample_effects![ambisonic_node],
+        ))
+        // we only need one decoder
+        .chain_node(ambisonic_decode_node);
 
     commands.trigger(AudionimbusReady);
 }
@@ -139,9 +133,9 @@ impl AudioNode for AmbisonicNode {
     fn info(&self, _config: &Self::Configuration) -> AudioNodeInfo {
         AudioNodeInfo::new()
             .debug_name("ambisonic node")
-            // 2 -> 9
+            // 1 -> 9
             .channel_config(ChannelConfig {
-                num_inputs: ChannelCount::STEREO,
+                num_inputs: ChannelCount::MONO,
                 num_outputs: ChannelCount::new(AMBISONICS_NUM_CHANNELS as u32).unwrap(),
             })
     }
@@ -180,11 +174,11 @@ impl AudioNode for AmbisonicNode {
                 },
             )
             .unwrap(),
-            simulation_outputs: self.simulation_outputs.clone(),
-            reverb_effect_params: self
-                .reverb_effect_params
-                .as_ref()
-                .map(|params| params.clone().into()),
+            // simulation_outputs: self.simulation_outputs.clone(),
+            // reverb_effect_params: self
+            //     .reverb_effect_params
+            //     .as_ref()
+            //     .map(|params| params.clone().into()),
             input_buffer: Vec::with_capacity(FRAME_SIZE),
             output_buffer: std::array::from_fn(|_| {
                 Vec::with_capacity(cx.stream_info.max_block_frames.get() as usize * 2)
@@ -200,8 +194,8 @@ struct AmbisonicProcessor {
     ambisonics_encode_effect: audionimbus::AmbisonicsEncodeEffect,
     direct_effect: audionimbus::DirectEffect,
     reflection_effect: audionimbus::ReflectionEffect,
-    reverb_effect_params: Option<audionimbus::ReflectionEffectParams>,
-    simulation_outputs: Option<AudionimbusSimulationOutputs>,
+    // reverb_effect_params: Option<audionimbus::ReflectionEffectParams>,
+    // simulation_outputs: Option<AudionimbusSimulationOutputs>,
     input_buffer: Vec<f32>,
     output_buffer: [Vec<f32>; AMBISONICS_NUM_CHANNELS],
     max_block_frames: NonZeroU32,
@@ -223,22 +217,17 @@ impl AudioNodeProcessor for AmbisonicProcessor {
         // Don't early return on silent inputs: there is probably reverb left
 
         for frame in 0..proc_info.frames {
-            let mut downmixed = 0.0;
-            for channel in inputs {
-                downmixed += channel[frame];
-            }
-            downmixed /= inputs.len() as f32;
-
-            self.input_buffer.push(downmixed);
+            self.input_buffer.push(inputs[0][frame]);
             if self.input_buffer.len() != self.input_buffer.capacity() {
                 continue;
             }
             // Buffer full, let's work!
 
             let (Some(simulation_outputs), Some(reverb_effect_params)) = (
-                self.simulation_outputs.as_ref(),
-                self.reverb_effect_params.as_ref(),
+                self.params.simulation_outputs.as_ref(),
+                self.params.reverb_effect_params.as_ref(),
             ) else {
+                self.input_buffer.clear();
                 return ProcessStatus::ClearAllOutputs;
             };
 
@@ -321,9 +310,12 @@ impl AudioNodeProcessor for AmbisonicProcessor {
                 settings,
             )
             .unwrap();
-            let _effect_state =
-                self.reflection_effect
-                    .apply(reverb_effect_params, &input_buffer, &reverb_buffer);
+
+            let _effect_state = self.reflection_effect.apply(
+                &reverb_effect_params.clone().into(),
+                &input_buffer,
+                &reverb_buffer,
+            );
 
             izip!(
                 ambisonics_encode_buffer.channels(),
@@ -357,13 +349,13 @@ impl AudioNodeProcessor for AmbisonicProcessor {
             self.started_draining = true;
         }
 
-        let output_len = outputs[0].len();
+        let output_len = proc_info.frames;
         for (src, dst) in self.output_buffer.iter_mut().zip(outputs.iter_mut()) {
             for (i, out) in src.drain(..output_len).enumerate() {
                 dst[i] = out;
             }
         }
-        ProcessStatus::outputs_not_silent()
+        ProcessStatus::OutputsModified
     }
 }
 
@@ -418,7 +410,6 @@ impl AudioNode for AmbisonicDecodeNode {
 
         AmbisonicDecodeProcessor {
             params: self.clone(),
-            listener_orientation: self.listener_orientation.into(),
             hrtf: hrtf.clone(),
             ambisonics_decode_effect: audionimbus::AmbisonicsDecodeEffect::try_new(
                 &self.context,
@@ -440,7 +431,6 @@ impl AudioNode for AmbisonicDecodeNode {
 
 struct AmbisonicDecodeProcessor {
     params: AmbisonicDecodeNode,
-    listener_orientation: audionimbus::CoordinateSystem,
     hrtf: audionimbus::Hrtf,
     ambisonics_decode_effect: audionimbus::AmbisonicsDecodeEffect,
     input_buffer: [Vec<f32>; AMBISONICS_NUM_CHANNELS],
@@ -507,7 +497,7 @@ impl AudioNodeProcessor for AmbisonicDecodeProcessor {
             let ambisonics_decode_effect_params = audionimbus::AmbisonicsDecodeEffectParams {
                 order: AMBISONICS_ORDER,
                 hrtf: &self.hrtf,
-                orientation: self.listener_orientation,
+                orientation: self.params.listener_orientation.clone().into(),
                 binaural: false,
             };
             let _effect_state = self.ambisonics_decode_effect.apply(
@@ -538,7 +528,7 @@ impl AudioNodeProcessor for AmbisonicDecodeProcessor {
                 dst[i] = out;
             }
         }
-        ProcessStatus::outputs_not_silent()
+        ProcessStatus::OutputsModified
     }
 }
 
@@ -557,15 +547,13 @@ pub(crate) struct ListenerSource(pub(crate) audionimbus::Source);
 pub(crate) struct AudionimbusSource(pub(crate) audionimbus::Source);
 
 fn prepare_seedling_data(
-    mut nodes: Query<(&mut AudionimbusSource, &GlobalTransform)>,
-    // TODO: These should be retrieved via the `nodes` query
-    hack_abisonic_node: Single<&mut AmbisonicNode>,
-    hack_decode_node: Single<&mut AmbisonicDecodeNode>,
+    mut nodes: Query<(&mut AudionimbusSource, &GlobalTransform, &SampleEffects)>,
+    mut ambisonic_node: Query<&mut AmbisonicNode>,
+    mut decode_node: Single<&mut AmbisonicDecodeNode>,
     camera: Single<&GlobalTransform, With<Camera3d>>,
     mut listener_source: ResMut<ListenerSource>,
     mut simulator: ResMut<AudionimbusSimulator>,
-    context: Res<AudionimbusContext>,
-) {
+) -> Result {
     let camera_transform = camera.into_inner().compute_transform();
     let listener_position = camera_transform.translation;
     let listener_orientation: audionimbus::CoordinateSystem =
@@ -624,10 +612,9 @@ fn prepare_seedling_data(
         listener_source.get_outputs(audionimbus::SimulationFlags::REFLECTIONS);
     let reverb_effect_params = reverb_simulation_outputs.reflections();
 
-    let mut node = hack_abisonic_node.into_inner();
-    let mut decode_node = hack_decode_node.into_inner();
+    decode_node.listener_orientation = listener_orientation.into();
 
-    for (mut source, transform) in nodes.iter_mut() {
+    for (mut source, transform, effects) in nodes.iter_mut() {
         let transform = transform.compute_transform();
         let source_position = transform.translation;
 
@@ -664,16 +651,12 @@ fn prepare_seedling_data(
 
         let simulation_outputs = source.get_outputs(simulation_flags);
 
-        *node = AmbisonicNode {
-            source_position,
-            listener_position,
-            context: context.clone(),
-            simulation_outputs: Some(simulation_outputs.into()),
-            reverb_effect_params: Some(reverb_effect_params.deref().clone().into()),
-        };
-        *decode_node = AmbisonicDecodeNode {
-            listener_orientation: listener_orientation.into(),
-            context: context.clone(),
-        };
+        let mut node = ambisonic_node.get_effect_mut(effects)?;
+        node.source_position = source_position;
+        node.listener_position = listener_position;
+        node.simulation_outputs = Some(simulation_outputs.into());
+        node.reverb_effect_params = Some(reverb_effect_params.deref().clone().into());
     }
+
+    Ok(())
 }

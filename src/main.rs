@@ -80,6 +80,7 @@ fn setup(
             SamplePlayer::new(assets.load("selfless_courage.ogg")).looping(),
             AudionimbusPool,
         ));
+
         commands.spawn((
             source_position,
             PointLight {
