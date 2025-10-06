@@ -209,8 +209,8 @@ impl AudioNodeProcessor for AmbisonicProcessor {
 
         // Don't early return on silent inputs: there is probably reverb left
 
-        for frame in 0..proc_info.frames {
-            self.input_buffer.push(inputs[0][frame]);
+        for frame in inputs[0].iter().take(proc_info.frames).copied() {
+            self.input_buffer.push(frame);
             if self.input_buffer.len() != self.input_buffer.capacity() {
                 continue;
             }
@@ -490,7 +490,7 @@ impl AudioNodeProcessor for AmbisonicDecodeProcessor {
             let ambisonics_decode_effect_params = audionimbus::AmbisonicsDecodeEffectParams {
                 order: AMBISONICS_ORDER,
                 hrtf: &self.hrtf,
-                orientation: self.params.listener_orientation.clone().into(),
+                orientation: self.params.listener_orientation.into(),
                 binaural: false,
             };
             let _effect_state = self.ambisonics_decode_effect.apply(
