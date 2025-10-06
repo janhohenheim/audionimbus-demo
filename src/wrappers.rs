@@ -1,7 +1,10 @@
 use std::ops::Deref as _;
 
 use bevy::{math::Vec3, transform::components::Transform};
-use firewheel::diff::{Diff, Patch, RealtimeClone};
+use firewheel::{
+    collector::{ArcGc, OwnedGc},
+    diff::{Diff, Patch, RealtimeClone},
+};
 
 #[derive(Debug, Clone, RealtimeClone, Diff, Patch, PartialEq)]
 pub(crate) struct AudionimbusSimulationOutputs {
@@ -9,11 +12,11 @@ pub(crate) struct AudionimbusSimulationOutputs {
     pub(crate) reflections: AudionimbusReflectionEffectParams,
 }
 
-impl From<&audionimbus::SimulationOutputs> for AudionimbusSimulationOutputs {
-    fn from(outputs: &audionimbus::SimulationOutputs) -> Self {
+impl From<audionimbus::SimulationOutputs> for AudionimbusSimulationOutputs {
+    fn from(outputs: audionimbus::SimulationOutputs) -> Self {
         Self {
-            direct: outputs.direct().deref().into(),
-            reflections: outputs.reflections().deref().into(),
+            direct: outputs.direct().take().into(),
+            reflections: outputs.reflections().take().into(),
         }
     }
 }
@@ -26,7 +29,7 @@ pub(crate) struct AudionimbusReflectionEffectParams {
 
     /// The impulse response.
     #[diff(skip)]
-    pub(crate) impulse_response: audionimbus::ReflectionEffectIR,
+    pub(crate) impulse_response: ArcGc<OwnedGc<audionimbus::ReflectionEffectIR>>,
 
     /// 3-band reverb decay times (RT60).
     pub(crate) reverb_times: [f32; 3],
@@ -54,15 +57,15 @@ pub(crate) struct AudionimbusReflectionEffectParams {
     pub(crate) true_audio_next_slot: u64,
 }
 
-impl From<&AudionimbusReflectionEffectParams> for audionimbus::ReflectionEffectParams {
-    fn from(params: &AudionimbusReflectionEffectParams) -> Self {
+impl From<AudionimbusReflectionEffectParams> for audionimbus::ReflectionEffectParams {
+    fn from(params: AudionimbusReflectionEffectParams) -> Self {
         Self {
             num_channels: params.num_channels as usize,
             impulse_response_size: params.impulse_response_size as usize,
             true_audio_next_device: params.true_audio_next_device.clone().into(),
             true_audio_next_slot: params.true_audio_next_slot as usize,
             reflection_effect_type: params.reflection_effect_type.clone().into(),
-            impulse_response: params.impulse_response.0,
+            impulse_response: params.impulse_response.deref().deref().clone(),
             reverb_times: params.reverb_times,
             equalizer: params.equalizer.clone().into(),
             delay: params.delay as usize,
@@ -70,15 +73,15 @@ impl From<&AudionimbusReflectionEffectParams> for audionimbus::ReflectionEffectP
     }
 }
 
-impl From<&audionimbus::ReflectionEffectParams> for AudionimbusReflectionEffectParams {
-    fn from(value: &audionimbus::ReflectionEffectParams) -> Self {
+impl From<audionimbus::ReflectionEffectParams> for AudionimbusReflectionEffectParams {
+    fn from(value: audionimbus::ReflectionEffectParams) -> Self {
         Self {
             num_channels: value.num_channels as u64,
             impulse_response_size: value.impulse_response_size as u64,
             true_audio_next_device: value.true_audio_next_device.clone().into(),
             true_audio_next_slot: value.true_audio_next_slot as u64,
             reflection_effect_type: value.reflection_effect_type.into(),
-            impulse_response: ReflectionEffectIR(value.impulse_response),
+            impulse_response: ArcGc::new(OwnedGc::new(value.impulse_response.clone())),
             reverb_times: value.reverb_times,
             equalizer: value.equalizer.into(),
             delay: value.delay as u64,
@@ -156,8 +159,8 @@ pub(crate) struct AudionimbusDirectEffectParams {
     pub(crate) transmission: Option<AudionimbusTransmission>,
 }
 
-impl From<&AudionimbusDirectEffectParams> for audionimbus::DirectEffectParams {
-    fn from(params: &AudionimbusDirectEffectParams) -> Self {
+impl From<AudionimbusDirectEffectParams> for audionimbus::DirectEffectParams {
+    fn from(params: AudionimbusDirectEffectParams) -> Self {
         Self {
             distance_attenuation: params.distance_attenuation,
             air_absorption: params.air_absorption.clone().map(|eq| eq.into()),
@@ -168,8 +171,8 @@ impl From<&AudionimbusDirectEffectParams> for audionimbus::DirectEffectParams {
     }
 }
 
-impl From<&audionimbus::DirectEffectParams> for AudionimbusDirectEffectParams {
-    fn from(params: &audionimbus::DirectEffectParams) -> Self {
+impl From<audionimbus::DirectEffectParams> for AudionimbusDirectEffectParams {
+    fn from(params: audionimbus::DirectEffectParams) -> Self {
         Self {
             distance_attenuation: params.distance_attenuation,
             air_absorption: params.air_absorption.map(|eq| eq.into()),

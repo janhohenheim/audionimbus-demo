@@ -185,7 +185,7 @@ impl AudioNode for AmbisonicNode {
             reverb_effect_params: self
                 .reverb_effect_params
                 .as_ref()
-                .map(|params| params.into()),
+                .map(|params| params.clone().into()),
             input_buffer: Vec::with_capacity(FRAME_SIZE),
             output_buffer: std::array::from_fn(|_| Vec::with_capacity(buffer_size.max(FRAME_SIZE))),
         }
@@ -259,7 +259,7 @@ impl AudioNodeProcessor for AmbisonicProcessor {
                 audionimbus::AudioBuffer::try_with_data(&mut direct_container, &mut channel_ptrs)
                     .unwrap();
             let _effect_state = self.direct_effect.apply(
-                &direct_effect_params.into(),
+                &direct_effect_params.clone().into(),
                 &input_buffer,
                 &direct_buffer,
             );
@@ -303,7 +303,7 @@ impl AudioNodeProcessor for AmbisonicProcessor {
             )
             .unwrap();
             let _effect_state = self.reflection_effect.apply(
-                &reflection_effect_params.into(),
+                &reflection_effect_params.clone().into(),
                 &input_buffer,
                 &reflection_buffer,
             );
@@ -660,8 +660,8 @@ fn prepare_seedling_data(
             source_position,
             listener_position,
             context: context.clone(),
-            simulation_outputs: Some((&simulation_outputs).into()),
-            reverb_effect_params: Some(reverb_effect_params.deref().into()),
+            simulation_outputs: Some(simulation_outputs.into()),
+            reverb_effect_params: Some(reverb_effect_params.deref().clone().into()),
         };
         *decode_node = AmbisonicDecodeNode {
             listener_orientation: listener_orientation.into(),
