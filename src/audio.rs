@@ -41,9 +41,6 @@ pub(crate) fn setup_audionimbus(mut commands: Commands) {
 #[derive(PoolLabel, PartialEq, Eq, Debug, Hash, Clone)]
 pub(crate) struct AudionimbusPool;
 
-#[derive(NodeLabel, PartialEq, Eq, Debug, Hash, Clone)]
-struct AudionimbusBus;
-
 #[derive(Event)]
 pub(crate) struct AudionimbusReady;
 
@@ -87,7 +84,7 @@ fn late_init(
     let ambisonic_decode_node = AmbisonicDecodeNode::new(context.clone());
 
     commands
-        .spawn((VolumeNode::default(), AudionimbusBus))
+        .spawn(SamplerPool(AudionimbusPool))
         .chain_node(ambisonic_node)
         .chain_node_with(
             ambisonic_decode_node,
@@ -103,10 +100,6 @@ fn late_init(
                 (8, 8),
             ],
         );
-
-    commands
-        .spawn(SamplerPool(AudionimbusPool))
-        .connect(AudionimbusBus);
 
     commands.trigger(AudionimbusReady);
 }
