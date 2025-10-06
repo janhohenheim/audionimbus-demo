@@ -355,6 +355,9 @@ impl AudioNodeProcessor for AmbisonicProcessor {
             self.input_buffer.clear();
         }
 
+        if self.output_buffer[0].len() < outputs[0].len() {
+            return ProcessStatus::ClearAllOutputs;
+        }
         for (src, dst) in self.output_buffer.iter_mut().zip(outputs.iter_mut()) {
             for (i, out) in src.drain(..proc_info.frames.min(src.len())).enumerate() {
                 dst[i] = out;
@@ -521,6 +524,10 @@ impl AudioNodeProcessor for AmbisonicDecodeProcessor {
             for buff in &mut self.input_buffer {
                 buff.clear();
             }
+        }
+
+        if self.output_buffer[0].len() < outputs[0].len() {
+            return ProcessStatus::ClearAllOutputs;
         }
 
         for (src, dst) in self.output_buffer.iter_mut().zip(outputs.iter_mut()) {
