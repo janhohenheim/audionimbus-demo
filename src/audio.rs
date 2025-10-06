@@ -296,7 +296,7 @@ impl AudioNodeProcessor for AmbisonicProcessor {
                 &ambisonics_encode_buffer,
             );
 
-            let mut reflection_container = vec![0.0; FRAME_SIZE * AMBISONICS_NUM_CHANNELS];
+            let mut reflection_container = [0.0; FRAME_SIZE * AMBISONICS_NUM_CHANNELS];
             let settings = audionimbus::AudioBufferSettings {
                 num_channels: Some(AMBISONICS_NUM_CHANNELS),
                 ..default()
@@ -314,7 +314,7 @@ impl AudioNodeProcessor for AmbisonicProcessor {
                 &reflection_buffer,
             );
 
-            let mut reverb_container = vec![0.0; FRAME_SIZE * AMBISONICS_NUM_CHANNELS];
+            let mut reverb_container = [0.0; FRAME_SIZE * AMBISONICS_NUM_CHANNELS];
             let settings = audionimbus::AudioBufferSettings {
                 num_channels: Some(AMBISONICS_NUM_CHANNELS),
                 ..default()
@@ -499,7 +499,7 @@ impl AudioNodeProcessor for AmbisonicDecodeProcessor {
             )
             .unwrap();
 
-            let mut staging_container = vec![0.0; FRAME_SIZE * 2];
+            let mut staging_container = [0.0; FRAME_SIZE * 2];
             let mut channel_ptrs = [std::ptr::null_mut(); 2];
             let settings = audionimbus::AudioBufferSettings {
                 num_channels: Some(outputs.len()),
