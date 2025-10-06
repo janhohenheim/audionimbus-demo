@@ -174,6 +174,15 @@ impl AudioNode for AmbisonicNode {
                 },
             )
             .unwrap(),
+            reverb_effect: audionimbus::ReflectionEffect::try_new(
+                &self.context,
+                &settings,
+                &audionimbus::ReflectionEffectSettings::Convolution {
+                    impulse_response_size: 2 * settings.sampling_rate,
+                    num_channels: AMBISONICS_NUM_CHANNELS,
+                },
+            )
+            .unwrap(),
             input_buffer: Vec::with_capacity(FRAME_SIZE),
             output_buffer: std::array::from_fn(|_| {
                 Vec::with_capacity(cx.stream_info.max_block_frames.get() as usize * 2)
@@ -189,6 +198,7 @@ struct AmbisonicProcessor {
     ambisonics_encode_effect: audionimbus::AmbisonicsEncodeEffect,
     direct_effect: audionimbus::DirectEffect,
     reflection_effect: audionimbus::ReflectionEffect,
+    reverb_effect: audionimbus::ReflectionEffect,
     input_buffer: Vec<f32>,
     output_buffer: [Vec<f32>; AMBISONICS_NUM_CHANNELS],
     max_block_frames: NonZeroU32,
@@ -304,7 +314,7 @@ impl AudioNodeProcessor for AmbisonicProcessor {
             )
             .unwrap();
 
-            let _effect_state = self.reflection_effect.apply(
+            let _effect_state = self.reverb_effect.apply(
                 &reverb_effect_params.clone().into(),
                 &input_buffer,
                 &reverb_buffer,
