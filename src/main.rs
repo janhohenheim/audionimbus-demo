@@ -6,7 +6,10 @@ use bevy::{
 };
 use bevy_seedling::prelude::*;
 
-use crate::camera_controller::CameraController;
+use crate::{
+    audio::{AudionimbusContext, AudionimbusReady, AudionimbusSimulator},
+    camera_controller::CameraController,
+};
 
 mod audio;
 mod camera_controller;
@@ -26,17 +29,31 @@ fn main() {
             SeedlingPlugin::default(),
         ))
         .add_plugins((audio::plugin, camera_controller::plugin))
-        .add_systems(Startup, setup)
+        .add_observer(setup)
         .run();
 }
 
 fn setup(
+    _ready: On<AudionimbusReady>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut audio: ResMut<audio::Audio>,
+    context: Res<AudionimbusContext>,
+    mut simulator: ResMut<AudionimbusSimulator>,
     assets: Res<AssetServer>,
 ) {
+    let simulation_flags =
+        audionimbus::SimulationFlags::DIRECT | audionimbus::SimulationFlags::REFLECTIONS;
+    let source = audionimbus::Source::try_new(
+        &simulator,
+        &audionimbus::SourceSettings {
+            flags: simulation_flags,
+        },
+    )
+    .unwrap();
+    simulator.add_source(&source);
+    simulator.commit();
+
     let sphere = meshes.add(Sphere { radius: 0.1 });
     let sphere_material = materials.add(StandardMaterial {
         emissive: LinearRgba {
@@ -47,25 +64,6 @@ fn setup(
         },
         ..default()
     });
-    let simulation_flags =
-        audionimbus::SimulationFlags::DIRECT | audionimbus::SimulationFlags::REFLECTIONS;
-    let source = audionimbus::Source::try_new(
-        &audio.simulator,
-        &audionimbus::SourceSettings {
-            flags: simulation_flags,
-        },
-    )
-    .unwrap();
-    audio.simulator.add_source(&source);
-    let source = audionimbus::Source::try_new(
-        &audio.simulator,
-        &audionimbus::SourceSettings {
-            flags: simulation_flags,
-        },
-    )
-    .unwrap();
-    audio.simulator.add_source(&source);
-    audio.simulator.commit();
 
     #[cfg(not(any(feature = "direct", feature = "reverb")))]
     {
@@ -75,10 +73,9 @@ fn setup(
             MeshMaterial3d(sphere_material.clone()),
             source_position,
             SamplePlayer::new(assets.load("selfless_courage.ogg")).looping(),
-            audio::AudionimbusSource(source),
             sample_effects![
                 audio::AmbisonicNode {
-                    context: audio.context.clone(),
+                    context: context.clone(),
                     source_position: default(),
                     listener_position: default(),
                     simulation_outputs: default(),
@@ -86,8 +83,7 @@ fn setup(
                 },
                 audio::AmbisonicDecodeNode {
                     listener_orientation: default(),
-                    context: audio.context.clone(),
-                    settings: audio.settings.into(),
+                    context: context.clone(),
                 }
             ],
         ));
@@ -175,6 +171,55 @@ fn setup(
         ));
     }
 
+    let mut scene =
+        audionimbus::Scene::try_new(&context, &audionimbus::SceneSettings::default()).unwrap();
+
+    let walls = audionimbus::StaticMesh::try_new(
+        &scene,
+        &audionimbus::StaticMeshSettings {
+            vertices: &[
+                // Floor
+                audionimbus::Point::new(-2.0, 0.0, -2.0),
+                audionimbus::Point::new(2.0, 0.0, -2.0),
+                audionimbus::Point::new(2.0, 0.0, 2.0),
+                audionimbus::Point::new(-2.0, 0.0, 2.0),
+                // Ceiling
+                audionimbus::Point::new(-2.0, 4.0, -2.0),
+                audionimbus::Point::new(2.0, 4.0, -2.0),
+                audionimbus::Point::new(2.0, 4.0, 2.0),
+                audionimbus::Point::new(-2.0, 4.0, 2.0),
+                // Back wall
+                audionimbus::Point::new(-2.0, 0.0, -2.0),
+                audionimbus::Point::new(2.0, 0.0, -2.0),
+                audionimbus::Point::new(2.0, 4.0, -2.0),
+                audionimbus::Point::new(-2.0, 4.0, -2.0),
+                // Left wall
+                audionimbus::Point::new(-2.0, 0.0, -2.0),
+                audionimbus::Point::new(-2.0, 0.0, 2.0),
+                audionimbus::Point::new(-2.0, 4.0, 2.0),
+                audionimbus::Point::new(-2.0, 4.0, -2.0),
+            ],
+            triangles: &[
+                // Floor
+                audionimbus::Triangle::new(0, 1, 2),
+                audionimbus::Triangle::new(0, 2, 3),
+                // Ceiling
+                audionimbus::Triangle::new(4, 6, 5),
+                audionimbus::Triangle::new(4, 7, 6),
+                // Back wall
+                audionimbus::Triangle::new(8, 9, 10),
+                audionimbus::Triangle::new(8, 10, 11),
+                // Left wall
+                audionimbus::Triangle::new(12, 14, 13),
+                audionimbus::Triangle::new(12, 15, 14),
+            ],
+            material_indices: &[0, 0, 0, 0, 0, 0, 0, 0],
+            materials: &[audionimbus::Material::WOOD],
+        },
+    )
+    .unwrap();
+    scene.add_static_mesh(&walls);
+
     for (vertices, normal) in TOPOLOGY {
         let normal = [normal[1], normal[2], normal[0]];
         commands.spawn((
@@ -207,7 +252,7 @@ fn setup(
         ));
 
         let surface = audionimbus::StaticMesh::try_new(
-            &audio.scene,
+            &scene,
             &audionimbus::StaticMeshSettings {
                 vertices: &vertices
                     .iter()
@@ -222,9 +267,12 @@ fn setup(
             },
         )
         .unwrap();
-        audio.scene.add_static_mesh(&surface);
+        scene.add_static_mesh(&surface);
     }
-    audio.scene.commit();
+    scene.commit();
+
+    simulator.set_scene(&scene);
+    simulator.commit();
 
     commands.insert_resource(AmbientLight {
         brightness: 200.0,

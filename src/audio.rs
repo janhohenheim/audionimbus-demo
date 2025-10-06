@@ -2,6 +2,7 @@ use std::ops::Deref as _;
 
 use bevy::prelude::*;
 use bevy_seedling::{
+    context::StreamStartEvent,
     firewheel::diff::{Diff, Patch},
     node::RegisterNode as _,
     prelude::ChannelCount,
@@ -19,64 +20,35 @@ use itertools::izip;
 use crate::wrappers::*;
 
 pub(super) fn plugin(app: &mut App) {
-    app.register_node::<AmbisonicNode>();
-    app.register_node::<AmbisonicDecodeNode>();
+    app.register_node::<AmbisonicNode>()
+        .register_node::<AmbisonicDecodeNode>();
 
+    app.add_systems(PreStartup, setup_audionimbus);
+
+    app.add_systems(
+        PostUpdate,
+        prepare_seedling_data.after(TransformSystems::Propagate),
+    );
+    app.add_observer(init_simulator);
+}
+
+pub(crate) fn setup_audionimbus(mut commands: Commands) {
     let context = audionimbus::Context::try_new(&audionimbus::ContextSettings::default()).unwrap();
 
-    let mut scene =
-        audionimbus::Scene::try_new(&context, &audionimbus::SceneSettings::default()).unwrap();
+    commands.insert_resource(AudionimbusContext(context));
+}
 
-    let walls = audionimbus::StaticMesh::try_new(
-        &scene,
-        &audionimbus::StaticMeshSettings {
-            vertices: &[
-                // Floor
-                audionimbus::Point::new(-2.0, 0.0, -2.0),
-                audionimbus::Point::new(2.0, 0.0, -2.0),
-                audionimbus::Point::new(2.0, 0.0, 2.0),
-                audionimbus::Point::new(-2.0, 0.0, 2.0),
-                // Ceiling
-                audionimbus::Point::new(-2.0, 4.0, -2.0),
-                audionimbus::Point::new(2.0, 4.0, -2.0),
-                audionimbus::Point::new(2.0, 4.0, 2.0),
-                audionimbus::Point::new(-2.0, 4.0, 2.0),
-                // Back wall
-                audionimbus::Point::new(-2.0, 0.0, -2.0),
-                audionimbus::Point::new(2.0, 0.0, -2.0),
-                audionimbus::Point::new(2.0, 4.0, -2.0),
-                audionimbus::Point::new(-2.0, 4.0, -2.0),
-                // Left wall
-                audionimbus::Point::new(-2.0, 0.0, -2.0),
-                audionimbus::Point::new(-2.0, 0.0, 2.0),
-                audionimbus::Point::new(-2.0, 4.0, 2.0),
-                audionimbus::Point::new(-2.0, 4.0, -2.0),
-            ],
-            triangles: &[
-                // Floor
-                audionimbus::Triangle::new(0, 1, 2),
-                audionimbus::Triangle::new(0, 2, 3),
-                // Ceiling
-                audionimbus::Triangle::new(4, 6, 5),
-                audionimbus::Triangle::new(4, 7, 6),
-                // Back wall
-                audionimbus::Triangle::new(8, 9, 10),
-                audionimbus::Triangle::new(8, 10, 11),
-                // Left wall
-                audionimbus::Triangle::new(12, 14, 13),
-                audionimbus::Triangle::new(12, 15, 14),
-            ],
-            material_indices: &[0, 0, 0, 0, 0, 0, 0, 0],
-            materials: &[audionimbus::Material::WOOD],
-        },
-    )
-    .unwrap();
-    scene.add_static_mesh(&walls);
-    scene.commit();
+#[derive(Event)]
+pub(crate) struct AudionimbusReady;
 
+fn init_simulator(
+    stream_start: On<StreamStartEvent>,
+    mut commands: Commands,
+    context: Res<AudionimbusContext>,
+) {
     let mut simulator = audionimbus::Simulator::builder(
         audionimbus::SceneParams::Default,
-        SAMPLING_RATE,
+        stream_start.sample_rate.get() as usize,
         FRAME_SIZE,
     )
     .with_direct(audionimbus::DirectSimulationSettings {
@@ -92,9 +64,6 @@ pub(super) fn plugin(app: &mut App) {
     })
     .try_build(&context)
     .unwrap();
-    simulator.set_scene(&scene);
-
-    // Listener source used for reverb.
     let listener_source = audionimbus::Source::try_new(
         &simulator,
         &audionimbus::SourceSettings {
@@ -103,21 +72,10 @@ pub(super) fn plugin(app: &mut App) {
     )
     .unwrap();
     simulator.add_source(&listener_source);
-    app.insert_resource(ListenerSource {
-        source: listener_source,
-    });
     simulator.commit();
-
-    app.insert_resource(Audio {
-        context,
-        scene,
-        simulator,
-    });
-
-    app.add_systems(
-        PostUpdate,
-        prepare_seedling_data.after(TransformSystems::Propagate),
-    );
+    commands.insert_resource(ListenerSource(listener_source));
+    commands.insert_resource(AudionimbusSimulator(simulator));
+    commands.trigger(AudionimbusReady);
 }
 
 pub(crate) const FRAME_SIZE: usize = 1024;
@@ -472,21 +430,15 @@ impl AudioNodeProcessor for AmbisonicDecodeProcessor {
 }
 
 #[derive(Resource, Deref, DerefMut)]
-pub(crate) struct AudionimbusContext(audionimbus::Context);
-
-#[derive(Resource, Deref, DerefMut)]
-pub(crate) struct AudionimbusScene(audionimbus::Scene);
+pub(crate) struct AudionimbusContext(pub(crate) audionimbus::Context);
 
 #[derive(Resource, Deref, DerefMut)]
 pub(crate) struct AudionimbusSimulator(
-    audionimbus::Simulator<audionimbus::Direct, audionimbus::Reflections>,
+    pub(crate) audionimbus::Simulator<audionimbus::Direct, audionimbus::Reflections>,
 );
 
-#[derive(Resource)]
-pub(crate) struct ListenerSource {
-    // Special source used for reverb.
-    pub(crate) source: audionimbus::Source,
-}
+#[derive(Resource, Deref, DerefMut)]
+pub(crate) struct ListenerSource(pub(crate) audionimbus::Source);
 
 #[derive(Component, Deref, DerefMut)]
 pub(crate) struct AudionimbusSource(pub(crate) audionimbus::Source);
@@ -500,7 +452,8 @@ fn prepare_seedling_data(
     )>,
     camera: Single<&GlobalTransform, With<Camera3d>>,
     mut listener_source: ResMut<ListenerSource>,
-    mut audio: ResMut<Audio>,
+    mut simulator: ResMut<AudionimbusSimulator>,
+    context: Res<AudionimbusContext>,
 ) {
     let camera_transform = camera.into_inner().compute_transform();
     let listener_position = camera_transform.translation;
@@ -508,7 +461,7 @@ fn prepare_seedling_data(
         AudionimbusCoordinateSystem::from(camera_transform).into();
 
     // Listener source to simulate reverb.
-    listener_source.source.set_inputs(
+    listener_source.set_inputs(
         audionimbus::SimulationFlags::REFLECTIONS,
         audionimbus::SimulationInputs {
             source: audionimbus::CoordinateSystem {
@@ -541,7 +494,7 @@ fn prepare_seedling_data(
 
     let simulation_flags =
         audionimbus::SimulationFlags::DIRECT | audionimbus::SimulationFlags::REFLECTIONS;
-    audio.simulator.set_shared_inputs(
+    simulator.set_shared_inputs(
         simulation_flags,
         &audionimbus::SimulationSharedInputs {
             listener: listener_orientation,
@@ -553,12 +506,11 @@ fn prepare_seedling_data(
             pathing_visualization_callback: None,
         },
     );
-    audio.simulator.run_direct();
-    audio.simulator.run_reflections();
+    simulator.run_direct();
+    simulator.run_reflections();
 
-    let reverb_simulation_outputs = listener_source
-        .source
-        .get_outputs(audionimbus::SimulationFlags::REFLECTIONS);
+    let reverb_simulation_outputs =
+        listener_source.get_outputs(audionimbus::SimulationFlags::REFLECTIONS);
     let reverb_effect_params = reverb_simulation_outputs.reflections();
 
     for (mut node, mut decode_node, mut source, transform) in nodes.iter_mut() {
@@ -601,13 +553,13 @@ fn prepare_seedling_data(
         *node = AmbisonicNode {
             source_position,
             listener_position,
-            context: audio.context.clone(),
+            context: context.clone(),
             simulation_outputs: Some((&simulation_outputs).into()),
             reverb_effect_params: Some(reverb_effect_params.deref().into()),
         };
         *decode_node = AmbisonicDecodeNode {
             listener_orientation: listener_orientation.into(),
-            context: audio.context.clone(),
+            context: context.clone(),
         };
     }
 }
