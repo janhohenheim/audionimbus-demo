@@ -47,7 +47,7 @@ pub(crate) struct AudionimbusReflectionEffectParams {
 
     /// The TrueAudio Next device to use for convolution processing.
     #[diff(skip)]
-    pub(crate) true_audio_next_device: TrueAudioNextDevice,
+    pub(crate) true_audio_next_device: audionimbus::TrueAudioNextDevice,
 
     /// The TrueAudio Next slot index to use for convolution processing.
     /// The slot identifies the IR to use.
@@ -90,23 +90,6 @@ impl From<&audionimbus::ReflectionEffectParams> for AudionimbusReflectionEffectP
 pub(crate) struct ReflectionEffectIR(pub(crate) audionimbus_sys::IPLReflectionEffectIR);
 unsafe impl Send for ReflectionEffectIR {}
 unsafe impl Sync for ReflectionEffectIR {}
-
-#[derive(Debug, Clone, RealtimeClone, PartialEq)]
-pub(crate) struct TrueAudioNextDevice(pub(crate) audionimbus_sys::IPLTrueAudioNextDevice);
-unsafe impl Send for TrueAudioNextDevice {}
-unsafe impl Sync for TrueAudioNextDevice {}
-
-impl From<audionimbus::TrueAudioNextDevice> for TrueAudioNextDevice {
-    fn from(device: audionimbus::TrueAudioNextDevice) -> Self {
-        Self(device.raw_ptr())
-    }
-}
-
-impl From<TrueAudioNextDevice> for audionimbus::TrueAudioNextDevice {
-    fn from(device: TrueAudioNextDevice) -> Self {
-        Self::from_raw_ptr(device.0)
-    }
-}
 
 /// Type of reflection effect algorithm to use.
 #[derive(Debug, Clone, RealtimeClone, Diff, Patch, PartialEq)]
