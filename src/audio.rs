@@ -20,7 +20,7 @@ use itertools::izip;
 use crate::wrappers::*;
 
 pub(super) fn plugin(app: &mut App) {
-    app.register_node::<AmbisonicNode>()
+    app.register_node::<AudionimbusNode>()
         .register_node::<AmbisonicDecodeNode>();
 
     app.add_systems(PreStartup, setup_audionimbus);
@@ -38,7 +38,7 @@ pub(crate) fn setup_audionimbus(mut commands: Commands) {
     commands.insert_resource(AudionimbusContext(context));
 }
 
-#[derive(PoolLabel, PartialEq, Eq, Debug, Hash, Clone)]
+#[derive(PoolLabel, PartialEq, Eq, Debug, Hash, Clone, Default)]
 pub(crate) struct AudionimbusPool;
 
 #[derive(Event)]
@@ -80,7 +80,7 @@ fn late_init(
     commands.insert_resource(ListenerSource(listener_source));
     commands.insert_resource(AudionimbusSimulator(simulator));
 
-    let ambisonic_node = AmbisonicNode::new(context.clone());
+    let ambisonic_node = AudionimbusNode::new(context.clone());
     let ambisonic_decode_node = AmbisonicDecodeNode::new(context.clone());
 
     commands
@@ -106,7 +106,7 @@ pub(crate) const GAIN_FACTOR_REFLECTIONS: f32 = 0.3;
 pub(crate) const GAIN_FACTOR_REVERB: f32 = 0.1;
 
 #[derive(Diff, Patch, Debug, Clone, Component)]
-pub(crate) struct AmbisonicNode {
+pub(crate) struct AudionimbusNode {
     pub(crate) source_position: Vec3,
     pub(crate) listener_position: Vec3,
     #[diff(skip)]
@@ -115,7 +115,7 @@ pub(crate) struct AmbisonicNode {
     pub(crate) reverb_effect_params: Option<AudionimbusReflectionEffectParams>,
 }
 
-impl AmbisonicNode {
+impl AudionimbusNode {
     pub(crate) fn new(context: audionimbus::Context) -> Self {
         Self {
             context,
@@ -127,7 +127,7 @@ impl AmbisonicNode {
     }
 }
 
-impl AudioNode for AmbisonicNode {
+impl AudioNode for AudionimbusNode {
     type Configuration = EmptyConfig;
 
     fn info(&self, _config: &Self::Configuration) -> AudioNodeInfo {
@@ -149,7 +149,7 @@ impl AudioNode for AmbisonicNode {
             sampling_rate: cx.stream_info.sample_rate.get() as usize,
             frame_size: FRAME_SIZE,
         };
-        AmbisonicProcessor {
+        AudionimbusProcessor {
             params: self.clone(),
             ambisonics_encode_effect: audionimbus::AmbisonicsEncodeEffect::try_new(
                 &self.context,
@@ -193,8 +193,8 @@ impl AudioNode for AmbisonicNode {
     }
 }
 
-struct AmbisonicProcessor {
-    params: AmbisonicNode,
+struct AudionimbusProcessor {
+    params: AudionimbusNode,
     ambisonics_encode_effect: audionimbus::AmbisonicsEncodeEffect,
     direct_effect: audionimbus::DirectEffect,
     reflection_effect: audionimbus::ReflectionEffect,
@@ -205,7 +205,7 @@ struct AmbisonicProcessor {
     started_draining: bool,
 }
 
-impl AudioNodeProcessor for AmbisonicProcessor {
+impl AudioNodeProcessor for AudionimbusProcessor {
     fn process(
         &mut self,
         proc_info: &ProcInfo,
@@ -213,7 +213,7 @@ impl AudioNodeProcessor for AmbisonicProcessor {
         events: &mut ProcEvents,
         _: &mut ProcExtra,
     ) -> ProcessStatus {
-        for patch in events.drain_patches::<AmbisonicNode>() {
+        for patch in events.drain_patches::<AudionimbusNode>() {
             self.params.apply(patch);
         }
 
@@ -547,11 +547,12 @@ pub(crate) struct AudionimbusSimulator(
 pub(crate) struct ListenerSource(pub(crate) audionimbus::Source);
 
 #[derive(Component, Deref, DerefMut)]
+#[require(Transform, GlobalTransform, AudionimbusPool)]
 pub(crate) struct AudionimbusSource(pub(crate) audionimbus::Source);
 
 fn prepare_seedling_data(
     mut nodes: Query<(&mut AudionimbusSource, &GlobalTransform, &SampleEffects)>,
-    mut ambisonic_node: Query<&mut AmbisonicNode>,
+    mut ambisonic_node: Query<&mut AudionimbusNode>,
     mut decode_node: Single<&mut AmbisonicDecodeNode>,
     camera: Single<&GlobalTransform, With<Camera3d>>,
     mut listener_source: ResMut<ListenerSource>,
