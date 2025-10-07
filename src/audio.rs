@@ -501,7 +501,7 @@ impl AudioNodeProcessor for AmbisonicDecodeProcessor {
                 order: AMBISONICS_ORDER,
                 hrtf: &self.hrtf,
                 orientation: self.params.listener_orientation.into(),
-                binaural: false,
+                binaural: true,
             };
             let _effect_state = self.ambisonics_decode_effect.apply(
                 &ambisonics_decode_effect_params,

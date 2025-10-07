@@ -114,12 +114,10 @@ fn setup(
             Mesh3d(sphere.clone()),
             MeshMaterial3d(sphere_material.clone()),
             source_position,
-            audio::AudioSource {
-                source,
-                data: samples,
-                is_repeating: true,
-                position: 0,
-            },
+            AudionimbusSource(source),
+            GlobalTransform::default(),
+            SamplePlayer::new(assets.load("selfless_courage.ogg")).looping(),
+            AudionimbusPool,
         ));
         commands.spawn((
             source_position,
@@ -142,12 +140,10 @@ fn setup(
             Mesh3d(sphere.clone()),
             MeshMaterial3d(sphere_material.clone()),
             source_position,
-            audio::AudioSource {
-                source,
-                data: samples,
-                is_repeating: true,
-                position: 0,
-            },
+            AudionimbusSource(source),
+            GlobalTransform::default(),
+            SamplePlayer::new(assets.load("selfless_courage.ogg")).looping(),
+            AudionimbusPool,
         ));
         commands.spawn((
             source_position,
@@ -207,7 +203,7 @@ fn setup(
                 audionimbus::Triangle::new(12, 15, 14),
             ],
             material_indices: &[0, 0, 0, 0, 0, 0, 0, 0],
-            materials: &[audionimbus::Material::WOOD],
+            materials: &[audionimbus::Material::CARPET],
         },
     )
     .unwrap();
