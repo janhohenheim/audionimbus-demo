@@ -345,6 +345,16 @@ impl AudioNodeProcessor for AudionimbusProcessor {
             self.input_buffer.clear();
         }
 
+        if self.input_buffer.capacity() > FRAME_SIZE {
+            error!("allocated input_buffer in processor, this is a bug");
+        }
+
+        for buff in &self.output_buffer {
+            if buff.capacity() > self.max_block_frames.get() as usize * 2 {
+                error!("allocated output_buffer in processor, this is a bug");
+            }
+        }
+
         if !self.started_draining {
             if (self.output_buffer[0].len() as f32) < self.max_block_frames.get() as f32 * 1.5 {
                 return ProcessStatus::ClearAllOutputs;
@@ -400,7 +410,6 @@ impl AudioNode for AmbisonicDecodeNode {
             sampling_rate: cx.stream_info.sample_rate.get() as usize,
             frame_size: FRAME_SIZE,
         };
-        let buffer_size = cx.stream_info.max_block_frames.get() as usize;
         let hrtf = audionimbus::Hrtf::try_new(
             &self.context,
             &settings,
@@ -425,7 +434,9 @@ impl AudioNode for AmbisonicDecodeNode {
             )
             .unwrap(),
             input_buffer: std::array::from_fn(|_| Vec::with_capacity(FRAME_SIZE)),
-            output_buffer: std::array::from_fn(|_| Vec::with_capacity(buffer_size.max(FRAME_SIZE))),
+            output_buffer: std::array::from_fn(|_| {
+                Vec::with_capacity(cx.stream_info.max_block_frames.get() as usize * 2)
+            }),
             max_block_frames: cx.stream_info.max_block_frames,
             started_draining: false,
         }
@@ -515,6 +526,18 @@ impl AudioNodeProcessor for AmbisonicDecodeProcessor {
             self.output_buffer[1].extend(right);
             for buff in &mut self.input_buffer {
                 buff.clear();
+            }
+        }
+
+        for buff in &self.input_buffer {
+            if buff.capacity() > FRAME_SIZE {
+                error!("allocated input_buffer in processor, this is a bug");
+            }
+        }
+
+        for buff in &self.output_buffer {
+            if buff.capacity() > self.max_block_frames.get() as usize * 2 {
+                error!("allocated output_buffer in processor, this is a bug");
             }
         }
 
