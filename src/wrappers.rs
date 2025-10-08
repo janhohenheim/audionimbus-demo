@@ -10,8 +10,8 @@ pub(crate) struct AudionimbusSimulationOutputs {
 impl From<audionimbus::SimulationOutputs> for AudionimbusSimulationOutputs {
     fn from(outputs: audionimbus::SimulationOutputs) -> Self {
         Self {
-            direct: outputs.direct().take(),
-            reflections: outputs.reflections().take(),
+            direct: outputs.direct().into_inner(),
+            reflections: outputs.reflections().into_inner(),
         }
     }
 }
