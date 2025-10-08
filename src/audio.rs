@@ -1,4 +1,4 @@
-use std::{num::NonZeroU32, ops::Deref as _};
+use std::num::NonZeroU32;
 
 use bevy::prelude::*;
 use bevy_seedling::{
@@ -9,7 +9,7 @@ use bevy_seedling::{
 };
 use firewheel::{
     channel_config::ChannelConfig,
-    collector::OwnedGc,
+    collector::{ArcGc, OwnedGc},
     diff::EventQueue,
     event::{NodeEventType, ProcEvents},
     node::{
@@ -113,8 +113,6 @@ pub(crate) struct AudionimbusNode {
     pub(crate) listener_position: Vec3,
     #[diff(skip)]
     pub(crate) context: audionimbus::Context,
-    pub(crate) simulation_outputs: Option<AudionimbusSimulationOutputs>,
-    pub(crate) reverb_effect_params: Option<audionimbus::ReflectionEffectParams>,
 }
 
 impl AudionimbusNode {
@@ -123,8 +121,6 @@ impl AudionimbusNode {
             context,
             source_position: default(),
             listener_position: default(),
-            simulation_outputs: default(),
-            reverb_effect_params: default(),
         }
     }
 }
@@ -191,6 +187,8 @@ impl AudioNode for AudionimbusNode {
             }),
             max_block_frames: cx.stream_info.max_block_frames,
             started_draining: false,
+            simulation_outputs: None,
+            reverb_effect_params: None,
         }
     }
 }
@@ -205,6 +203,8 @@ struct AudionimbusProcessor {
     output_buffer: [Vec<f32>; AMBISONICS_NUM_CHANNELS as usize],
     max_block_frames: NonZeroU32,
     started_draining: bool,
+    simulation_outputs: Option<audionimbus::SimulationOutputs>,
+    reverb_effect_params: Option<ArcGc<OwnedGc<audionimbus::ReflectionEffectParams>>>,
 }
 
 impl AudioNodeProcessor for AudionimbusProcessor {
@@ -219,9 +219,13 @@ impl AudioNodeProcessor for AudionimbusProcessor {
             if let Some(patch) = AudionimbusNode::patch_event(&event) {
                 self.params.apply(patch);
             }
-            if let NodeEventType::Custom(event) = event {
-                let string = event.get().downcast_ref::<String>().unwrap();
-                info!("Received custom event: {}", string);
+            if let NodeEventType::Custom(mut event) = event {
+                if let Some(update) = event.get_mut().downcast_mut::<SimulationUpdate>() {
+                    if let Some(outputs) = update.outputs.take() {
+                        self.simulation_outputs = Some(outputs);
+                    }
+                    self.reverb_effect_params = Some(update.reverb_effect_params.clone());
+                }
             }
         }
 
@@ -235,8 +239,8 @@ impl AudioNodeProcessor for AudionimbusProcessor {
             // Buffer full, let's work!
 
             let (Some(simulation_outputs), Some(reverb_effect_params)) = (
-                self.params.simulation_outputs.as_ref(),
-                self.params.reverb_effect_params.as_ref(),
+                self.simulation_outputs.as_ref(),
+                self.reverb_effect_params.as_ref(),
             ) else {
                 self.input_buffer.clear();
                 return ProcessStatus::ClearAllOutputs;
@@ -244,8 +248,8 @@ impl AudioNodeProcessor for AudionimbusProcessor {
 
             let source_position = self.params.source_position;
 
-            let direct_effect_params = &simulation_outputs.direct;
-            let reflection_effect_params = &simulation_outputs.reflections;
+            let direct_effect_params = simulation_outputs.direct();
+            let reflection_effect_params = simulation_outputs.reflections();
 
             let mut channel_ptrs = [std::ptr::null_mut(); 1];
             let mut input_container = [0.0; FRAME_SIZE as usize];
@@ -384,6 +388,11 @@ impl AudioNodeProcessor for AudionimbusProcessor {
         }
         ProcessStatus::OutputsModified
     }
+}
+
+struct SimulationUpdate {
+    outputs: Option<audionimbus::SimulationOutputs>,
+    reverb_effect_params: ArcGc<OwnedGc<audionimbus::ReflectionEffectParams>>,
 }
 
 #[derive(Diff, Patch, Debug, Clone, Component)]
@@ -695,12 +704,13 @@ fn prepare_seedling_data(
         let (mut node, followers) = ambisonic_node.get_effect_mut(effects)?;
         let mut events = events.get_mut(followers.iter().next().unwrap())?;
         events.push(NodeEventType::Custom(OwnedGc::new(Box::new(
-            "hi".to_string(),
+            SimulationUpdate {
+                outputs: Some(simulation_outputs),
+                reverb_effect_params: ArcGc::new(OwnedGc::new(reverb_effect_params.clone())),
+            },
         ))));
         node.source_position = source_position;
         node.listener_position = listener_position;
-        node.simulation_outputs = Some(simulation_outputs.into());
-        node.reverb_effect_params = Some(reverb_effect_params.deref().clone());
     }
 
     Ok(())

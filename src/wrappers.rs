@@ -1,20 +1,4 @@
 use bevy::{math::Vec3, transform::components::Transform};
-use firewheel::diff::{Diff, Patch, RealtimeClone};
-
-#[derive(Debug, Clone, RealtimeClone, Diff, Patch, PartialEq)]
-pub(crate) struct AudionimbusSimulationOutputs {
-    pub(crate) direct: audionimbus::DirectEffectParams,
-    pub(crate) reflections: audionimbus::ReflectionEffectParams,
-}
-
-impl From<audionimbus::SimulationOutputs> for AudionimbusSimulationOutputs {
-    fn from(outputs: audionimbus::SimulationOutputs) -> Self {
-        Self {
-            direct: outputs.direct().into_inner(),
-            reflections: outputs.reflections().into_inner(),
-        }
-    }
-}
 
 pub(crate) trait AudionimbusCoordinateSystemFromTransform {
     fn from_transform(transform: Transform) -> audionimbus::CoordinateSystem;
