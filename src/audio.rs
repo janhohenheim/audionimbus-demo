@@ -215,14 +215,14 @@ impl AudioNodeProcessor for AudionimbusProcessor {
         events: &mut ProcEvents,
         _: &mut ProcExtra,
     ) -> ProcessStatus {
-        for patch in events.drain_patches::<AudionimbusNode>() {
-            self.params.apply(patch);
-        }
-
-        info!("Number of events: {}", events.num_events());
-        if let Some(NodeEventType::Custom(event)) = events.drain().into_iter().last() {
-            let string = event.get().downcast_ref::<String>().unwrap();
-            info!("Received custom event: {}", string);
+        for event in events.drain() {
+            if let Some(patch) = AudionimbusNode::patch_event(&event) {
+                self.params.apply(patch);
+            }
+            if let NodeEventType::Custom(event) = event {
+                let string = event.get().downcast_ref::<String>().unwrap();
+                info!("Received custom event: {}", string);
+            }
         }
 
         // Don't early return on silent inputs: there is probably reverb left
@@ -697,7 +697,6 @@ fn prepare_seedling_data(
         events.push(NodeEventType::Custom(OwnedGc::new(Box::new(
             "hi".to_string(),
         ))));
-        info!("sent!");
         node.source_position = source_position;
         node.listener_position = listener_position;
         node.simulation_outputs = Some(simulation_outputs.into());
