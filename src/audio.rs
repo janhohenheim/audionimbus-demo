@@ -1,4 +1,8 @@
-use std::num::NonZeroU32;
+use std::{
+    num::NonZeroU32,
+    ops::{Deref as _, DerefMut},
+    sync::Mutex,
+};
 
 use bevy::prelude::*;
 use bevy_seedling::{
@@ -204,7 +208,7 @@ struct AudionimbusProcessor {
     max_block_frames: NonZeroU32,
     started_draining: bool,
     simulation_outputs: Option<audionimbus::SimulationOutputs>,
-    reverb_effect_params: Option<ArcGc<OwnedGc<audionimbus::ReflectionEffectParams>>>,
+    reverb_effect_params: Option<ArcGc<Mutex<audionimbus::ReflectionEffectParams>>>,
 }
 
 impl AudioNodeProcessor for AudionimbusProcessor {
@@ -239,8 +243,8 @@ impl AudioNodeProcessor for AudionimbusProcessor {
             // Buffer full, let's work!
 
             let (Some(simulation_outputs), Some(reverb_effect_params)) = (
-                self.simulation_outputs.as_ref(),
-                self.reverb_effect_params.as_ref(),
+                self.simulation_outputs.as_mut(),
+                self.reverb_effect_params.as_mut(),
             ) else {
                 self.input_buffer.clear();
                 return ProcessStatus::ClearAllOutputs;
@@ -249,7 +253,7 @@ impl AudioNodeProcessor for AudionimbusProcessor {
             let source_position = self.params.source_position;
 
             let direct_effect_params = simulation_outputs.direct();
-            let reflection_effect_params = simulation_outputs.reflections();
+            let mut reflection_effect_params = simulation_outputs.reflections();
 
             let mut channel_ptrs = [std::ptr::null_mut(); 1];
             let mut input_container = [0.0; FRAME_SIZE as usize];
@@ -314,7 +318,7 @@ impl AudioNodeProcessor for AudionimbusProcessor {
             )
             .unwrap();
             let _effect_state = self.reflection_effect.apply(
-                &reflection_effect_params.clone(),
+                &mut reflection_effect_params,
                 &input_buffer,
                 &reflection_buffer,
             );
@@ -333,7 +337,7 @@ impl AudioNodeProcessor for AudionimbusProcessor {
             .unwrap();
 
             let _effect_state = self.reverb_effect.apply(
-                &reverb_effect_params.clone(),
+                reverb_effect_params.try_lock().unwrap().deref_mut(),
                 &input_buffer,
                 &reverb_buffer,
             );
@@ -392,7 +396,7 @@ impl AudioNodeProcessor for AudionimbusProcessor {
 
 struct SimulationUpdate {
     outputs: Option<audionimbus::SimulationOutputs>,
-    reverb_effect_params: ArcGc<OwnedGc<audionimbus::ReflectionEffectParams>>,
+    reverb_effect_params: ArcGc<Mutex<audionimbus::ReflectionEffectParams>>,
 }
 
 #[derive(Diff, Patch, Debug, Clone, Component)]
@@ -660,7 +664,9 @@ fn prepare_seedling_data(
 
     let reverb_simulation_outputs =
         listener_source.get_outputs(audionimbus::SimulationFlags::REFLECTIONS);
-    let reverb_effect_params = reverb_simulation_outputs.reflections();
+    let reverb_effect_params = ArcGc::new(Mutex::new(
+        reverb_simulation_outputs.reflections().into_inner(),
+    ));
 
     decode_node.listener_orientation = listener_orientation;
 
@@ -706,7 +712,7 @@ fn prepare_seedling_data(
         events.push(NodeEventType::Custom(OwnedGc::new(Box::new(
             SimulationUpdate {
                 outputs: Some(simulation_outputs),
-                reverb_effect_params: ArcGc::new(OwnedGc::new(reverb_effect_params.clone())),
+                reverb_effect_params: reverb_effect_params.clone(),
             },
         ))));
         node.source_position = source_position;
