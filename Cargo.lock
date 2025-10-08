@@ -1235,7 +1235,7 @@ dependencies = [
 [[package]]
 name = "bevy_seedling"
 version = "0.6.0"
-source = "git+https://github.com/corvusprudens/bevy_seedling?branch=v0.6.0#e215d031ef66d4d58b33b4a55f060dc1b845a445"
+source = "git+https://github.com/corvusprudens/bevy_seedling?branch=v0.6.0#c757f1e6a57f03bb4f9612fe5ffd158d2585706f"
 dependencies = [
  "bevy_app",
  "bevy_asset",
@@ -1260,7 +1260,7 @@ dependencies = [
 [[package]]
 name = "bevy_seedling_macros"
 version = "0.6.0-rc.1"
-source = "git+https://github.com/corvusprudens/bevy_seedling?branch=v0.6.0#e215d031ef66d4d58b33b4a55f060dc1b845a445"
+source = "git+https://github.com/corvusprudens/bevy_seedling?branch=v0.6.0#c757f1e6a57f03bb4f9612fe5ffd158d2585706f"
 dependencies = [
  "bevy_macro_utils",
  "proc-macro2",

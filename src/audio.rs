@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use bevy_seedling::{
     context::StreamStartEvent,
     firewheel::diff::{Diff, Patch},
-    node::{follower::Followers, RegisterNode as _},
+    node::RegisterNode as _,
     prelude::*,
 };
 use firewheel::{
@@ -596,8 +596,7 @@ pub(crate) struct AudionimbusSource(pub(crate) audionimbus::Source);
 
 fn prepare_seedling_data(
     mut nodes: Query<(&mut AudionimbusSource, &GlobalTransform, &SampleEffects)>,
-    mut ambisonic_node: Query<(&mut AudionimbusNode, &Followers)>,
-    mut events: Query<&mut AudioEvents>,
+    mut ambisonic_node: Query<(&mut AudionimbusNode, &mut AudioEvents)>,
     mut decode_node: Single<&mut AmbisonicDecodeNode>,
     camera: Single<&GlobalTransform, With<Camera3d>>,
     mut listener_source: ResMut<ListenerSource>,
@@ -701,8 +700,7 @@ fn prepare_seedling_data(
 
         let simulation_outputs = source.get_outputs(simulation_flags);
 
-        let (mut node, followers) = ambisonic_node.get_effect_mut(effects)?;
-        let mut events = events.get_mut(followers.iter().next().unwrap())?;
+        let (mut node, mut events) = ambisonic_node.get_effect_mut(effects)?;
         events.push(NodeEventType::Custom(OwnedGc::new(Box::new(
             SimulationUpdate {
                 outputs: Some(simulation_outputs),
