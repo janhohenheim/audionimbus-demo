@@ -4,12 +4,14 @@ use bevy::prelude::*;
 use bevy_seedling::{
     context::StreamStartEvent,
     firewheel::diff::{Diff, Patch},
-    node::RegisterNode as _,
+    node::{follower::Followers, RegisterNode as _},
     prelude::*,
 };
 use firewheel::{
     channel_config::ChannelConfig,
-    event::ProcEvents,
+    collector::OwnedGc,
+    diff::EventQueue,
+    event::{NodeEventType, ProcEvents},
     node::{
         AudioNode, AudioNodeInfo, AudioNodeProcessor, ConstructProcessorContext, EmptyConfig,
         ProcBuffers, ProcExtra, ProcInfo, ProcessStatus,
@@ -215,6 +217,12 @@ impl AudioNodeProcessor for AudionimbusProcessor {
     ) -> ProcessStatus {
         for patch in events.drain_patches::<AudionimbusNode>() {
             self.params.apply(patch);
+        }
+
+        info!("Number of events: {}", events.num_events());
+        if let Some(NodeEventType::Custom(event)) = events.drain().into_iter().last() {
+            let string = event.get().downcast_ref::<String>().unwrap();
+            info!("Received custom event: {}", string);
         }
 
         // Don't early return on silent inputs: there is probably reverb left
@@ -581,7 +589,8 @@ pub(crate) struct AudionimbusSource(pub(crate) audionimbus::Source);
 
 fn prepare_seedling_data(
     mut nodes: Query<(&mut AudionimbusSource, &GlobalTransform, &SampleEffects)>,
-    mut ambisonic_node: Query<&mut AudionimbusNode>,
+    mut ambisonic_node: Query<(&mut AudionimbusNode, &Followers)>,
+    mut events: Query<&mut AudioEvents>,
     mut decode_node: Single<&mut AmbisonicDecodeNode>,
     camera: Single<&GlobalTransform, With<Camera3d>>,
     mut listener_source: ResMut<ListenerSource>,
@@ -683,7 +692,12 @@ fn prepare_seedling_data(
 
         let simulation_outputs = source.get_outputs(simulation_flags);
 
-        let mut node = ambisonic_node.get_effect_mut(effects)?;
+        let (mut node, followers) = ambisonic_node.get_effect_mut(effects)?;
+        let mut events = events.get_mut(followers.iter().next().unwrap())?;
+        events.push(NodeEventType::Custom(OwnedGc::new(Box::new(
+            "hi".to_string(),
+        ))));
+        info!("sent!");
         node.source_position = source_position;
         node.listener_position = listener_position;
         node.simulation_outputs = Some(simulation_outputs.into());
