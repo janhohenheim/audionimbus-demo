@@ -112,7 +112,7 @@ pub(crate) struct AudionimbusNode {
     #[diff(skip)]
     pub(crate) context: audionimbus::Context,
     pub(crate) simulation_outputs: Option<AudionimbusSimulationOutputs>,
-    pub(crate) reverb_effect_params: Option<AudionimbusReflectionEffectParams>,
+    pub(crate) reverb_effect_params: Option<audionimbus::ReflectionEffectParams>,
 }
 
 impl AudionimbusNode {
@@ -374,7 +374,7 @@ impl AudioNodeProcessor for AudionimbusProcessor {
 
 #[derive(Diff, Patch, Debug, Clone, Component)]
 pub(crate) struct AmbisonicDecodeNode {
-    pub(crate) listener_orientation: AudionimbusCoordinateSystem,
+    pub(crate) listener_orientation: audionimbus::CoordinateSystem,
     #[diff(skip)]
     pub(crate) context: audionimbus::Context,
 }
@@ -583,8 +583,7 @@ fn prepare_seedling_data(
 ) -> Result {
     let camera_transform = camera.into_inner().compute_transform();
     let listener_position = camera_transform.translation;
-    let listener_orientation: audionimbus::CoordinateSystem =
-        AudionimbusCoordinateSystem::from(camera_transform).into();
+    let listener_orientation = audionimbus::CoordinateSystem::from_transform(camera_transform);
 
     // Listener source to simulate reverb.
     listener_source.set_inputs(

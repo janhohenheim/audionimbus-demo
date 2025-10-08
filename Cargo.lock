@@ -308,6 +308,7 @@ version = "0.8.3"
 dependencies = [
  "audionimbus-sys",
  "bitflags 2.9.4",
+ "firewheel",
 ]
 
 [[package]]
