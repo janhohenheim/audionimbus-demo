@@ -697,12 +697,10 @@ fn prepare_seedling_data(
         let simulation_outputs = source.get_outputs(simulation_flags);
 
         let (mut node, mut events) = ambisonic_node.get_effect_mut(effects)?;
-        events.push(NodeEventType::Custom(OwnedGc::new(Some(Box::new(
-            SimulationUpdate {
-                outputs: simulation_outputs,
-                reverb_effect_params: reverb_effect_params.clone(),
-            },
-        )))));
+        events.push(NodeEventType::custom(SimulationUpdate {
+            outputs: simulation_outputs,
+            reverb_effect_params: reverb_effect_params.clone(),
+        }));
         node.source_position = source_position;
         node.listener_position = listener_position;
     }
