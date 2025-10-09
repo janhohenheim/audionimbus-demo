@@ -1,5 +1,6 @@
 use std::num::NonZeroU32;
 
+use audionimbus::ReflectionEffectParams;
 use bevy::prelude::*;
 use bevy_seedling::{
     context::StreamStartEvent,
@@ -9,7 +10,6 @@ use bevy_seedling::{
 };
 use firewheel::{
     channel_config::ChannelConfig,
-    collector::{ArcGc, OwnedGc},
     diff::EventQueue,
     event::{NodeEventType, ProcEvents},
     node::{
@@ -22,7 +22,8 @@ use itertools::izip;
 use crate::wrappers::*;
 
 pub(super) fn plugin(app: &mut App) {
-    app.register_node::<AudionimbusNode>()
+    app.register_simple_node::<ReverbDataNode>()
+        .register_node::<AudionimbusNode>()
         .register_node::<AmbisonicDecodeNode>();
 
     app.add_systems(PreStartup, setup_audionimbus);
@@ -38,6 +39,8 @@ pub(crate) fn setup_audionimbus(mut commands: Commands) {
     let context = audionimbus::Context::try_new(&audionimbus::ContextSettings::default()).unwrap();
 
     commands.insert_resource(AudionimbusContext(context));
+
+    commands.spawn(ReverbDataNode);
 }
 
 #[derive(PoolLabel, PartialEq, Eq, Debug, Hash, Clone, Default)]
@@ -188,7 +191,6 @@ impl AudioNode for AudionimbusNode {
             max_block_frames: cx.stream_info.max_block_frames,
             started_draining: false,
             simulation_outputs: None,
-            reverb_effect_params: None,
         }
     }
 }
@@ -204,7 +206,6 @@ struct AudionimbusProcessor {
     max_block_frames: NonZeroU32,
     started_draining: bool,
     simulation_outputs: Option<audionimbus::SimulationOutputs>,
-    reverb_effect_params: Option<ArcGc<OwnedGc<audionimbus::ReflectionEffectParams>>>,
 }
 
 impl AudioNodeProcessor for AudionimbusProcessor {
@@ -213,15 +214,14 @@ impl AudioNodeProcessor for AudionimbusProcessor {
         proc_info: &ProcInfo,
         ProcBuffers { inputs, outputs }: ProcBuffers,
         events: &mut ProcEvents,
-        _: &mut ProcExtra,
+        extra: &mut ProcExtra,
     ) -> ProcessStatus {
         for mut event in events.drain() {
             if let Some(patch) = AudionimbusNode::patch_event(&event) {
                 self.params.apply(patch);
             }
-            if let Some(update) = event.downcast::<SimulationUpdate>() {
-                self.simulation_outputs = Some(update.outputs);
-                self.reverb_effect_params = Some(update.reverb_effect_params.clone());
+            if let Some(update) = event.downcast::<SimulationOutputEvent>() {
+                self.simulation_outputs = Some(update.0);
             }
         }
 
@@ -234,9 +234,9 @@ impl AudioNodeProcessor for AudionimbusProcessor {
             }
             // Buffer full, let's work!
 
-            let (Some(simulation_outputs), Some(reverb_effect_params)) = (
+            let (Some(simulation_outputs), Some(SharedReverbData(reverb_effect_params))) = (
                 self.simulation_outputs.as_ref(),
-                self.reverb_effect_params.as_ref(),
+                extra.store.try_get::<SharedReverbData>(),
             ) else {
                 self.input_buffer.clear();
                 return ProcessStatus::ClearAllOutputs;
@@ -384,10 +384,7 @@ impl AudioNodeProcessor for AudionimbusProcessor {
     }
 }
 
-struct SimulationUpdate {
-    outputs: audionimbus::SimulationOutputs,
-    reverb_effect_params: ArcGc<OwnedGc<audionimbus::ReflectionEffectParams>>,
-}
+struct SimulationOutputEvent(audionimbus::SimulationOutputs);
 
 #[derive(Diff, Patch, Debug, Clone, Component)]
 pub(crate) struct AmbisonicDecodeNode {
@@ -594,6 +591,7 @@ fn prepare_seedling_data(
     mut nodes: Query<(&mut AudionimbusSource, &GlobalTransform, &SampleEffects)>,
     mut ambisonic_node: Query<(&mut AudionimbusNode, &mut AudioEvents)>,
     mut decode_node: Single<&mut AmbisonicDecodeNode>,
+    mut reverb_data: Single<&mut AudioEvents, (With<ReverbDataNode>, Without<AudionimbusNode>)>,
     camera: Single<&GlobalTransform, With<Camera3d>>,
     mut listener_source: ResMut<ListenerSource>,
     mut simulator: ResMut<AudionimbusSimulator>,
@@ -653,7 +651,8 @@ fn prepare_seedling_data(
 
     let reverb_simulation_outputs =
         listener_source.get_outputs(audionimbus::SimulationFlags::REFLECTIONS);
-    let reverb_effect_params = ArcGc::new(OwnedGc::new(
+
+    reverb_data.push(NodeEventType::custom(
         reverb_simulation_outputs.reflections().into_inner(),
     ));
 
@@ -697,13 +696,53 @@ fn prepare_seedling_data(
         let simulation_outputs = source.get_outputs(simulation_flags);
 
         let (mut node, mut events) = ambisonic_node.get_effect_mut(effects)?;
-        events.push(NodeEventType::custom(SimulationUpdate {
-            outputs: simulation_outputs,
-            reverb_effect_params: reverb_effect_params.clone(),
-        }));
+        events.push(NodeEventType::custom(SimulationOutputEvent(
+            simulation_outputs,
+        )));
         node.source_position = source_position;
         node.listener_position = listener_position;
     }
 
     Ok(())
+}
+
+struct SharedReverbData(ReflectionEffectParams);
+
+#[derive(Component, Clone)]
+struct ReverbDataNode;
+
+impl AudioNode for ReverbDataNode {
+    type Configuration = EmptyConfig;
+
+    fn info(&self, _: &Self::Configuration) -> AudioNodeInfo {
+        AudioNodeInfo::new().channel_config(ChannelConfig::new(0, 0))
+    }
+
+    fn construct_processor(
+        &self,
+        _configuration: &Self::Configuration,
+        _cx: ConstructProcessorContext,
+    ) -> impl AudioNodeProcessor {
+        Self
+    }
+}
+
+impl AudioNodeProcessor for ReverbDataNode {
+    fn process(
+        &mut self,
+        _info: &ProcInfo,
+        _buffers: ProcBuffers,
+        events: &mut ProcEvents,
+        extra: &mut ProcExtra,
+    ) -> ProcessStatus {
+        for mut event in events.drain() {
+            if let Some(params) = event.downcast::<ReflectionEffectParams>() {
+                if let Err(params) = extra.store.insert(SharedReverbData(params)) {
+                    extra.store.get_mut::<SharedReverbData>().0 = params.0;
+                }
+            }
+        }
+
+        ProcessStatus::ClearAllOutputs
+    }
 }
