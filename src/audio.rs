@@ -215,17 +215,13 @@ impl AudioNodeProcessor for AudionimbusProcessor {
         events: &mut ProcEvents,
         _: &mut ProcExtra,
     ) -> ProcessStatus {
-        for event in events.drain() {
+        for mut event in events.drain() {
             if let Some(patch) = AudionimbusNode::patch_event(&event) {
                 self.params.apply(patch);
             }
-            if let NodeEventType::Custom(mut event) = event {
-                if let Some(update) = event.get_mut().downcast_mut::<SimulationUpdate>() {
-                    if let Some(outputs) = update.outputs.take() {
-                        self.simulation_outputs = Some(outputs);
-                    }
-                    self.reverb_effect_params = Some(update.reverb_effect_params.clone());
-                }
+            if let Some(update) = event.downcast::<SimulationUpdate>() {
+                self.simulation_outputs = Some(update.outputs);
+                self.reverb_effect_params = Some(update.reverb_effect_params.clone());
             }
         }
 
@@ -389,13 +385,13 @@ impl AudioNodeProcessor for AudionimbusProcessor {
 }
 
 struct SimulationUpdate {
-    outputs: Option<audionimbus::SimulationOutputs>,
+    outputs: audionimbus::SimulationOutputs,
     reverb_effect_params: ArcGc<OwnedGc<audionimbus::ReflectionEffectParams>>,
 }
 
 #[derive(Diff, Patch, Debug, Clone, Component)]
 pub(crate) struct AmbisonicDecodeNode {
-    pub(crate) listener_orientation: audionimbus::CoordinateSystem,
+    pub(crate) listener_orientation: AudionimbusCoordinateSystem,
     #[diff(skip)]
     pub(crate) context: audionimbus::Context,
 }
@@ -532,7 +528,7 @@ impl AudioNodeProcessor for AmbisonicDecodeProcessor {
             let ambisonics_decode_effect_params = audionimbus::AmbisonicsDecodeEffectParams {
                 order: AMBISONICS_ORDER,
                 hrtf: &self.hrtf,
-                orientation: self.params.listener_orientation,
+                orientation: self.params.listener_orientation.to_audionimbus(),
                 binaural: true,
             };
             let _effect_state = self.ambisonics_decode_effect.apply(
@@ -604,7 +600,7 @@ fn prepare_seedling_data(
 ) -> Result {
     let camera_transform = camera.into_inner().compute_transform();
     let listener_position = camera_transform.translation;
-    let listener_orientation = audionimbus::CoordinateSystem::from_transform(camera_transform);
+    let listener_orientation = AudionimbusCoordinateSystem::from_bevy_transform(camera_transform);
 
     // Listener source to simulate reverb.
     listener_source.set_inputs(
@@ -643,7 +639,7 @@ fn prepare_seedling_data(
     simulator.set_shared_inputs(
         simulation_flags,
         &audionimbus::SimulationSharedInputs {
-            listener: listener_orientation,
+            listener: listener_orientation.to_audionimbus(),
             num_rays: 2048,
             num_bounces: 8,
             duration: 2.0,
@@ -701,12 +697,12 @@ fn prepare_seedling_data(
         let simulation_outputs = source.get_outputs(simulation_flags);
 
         let (mut node, mut events) = ambisonic_node.get_effect_mut(effects)?;
-        events.push(NodeEventType::Custom(OwnedGc::new(Box::new(
+        events.push(NodeEventType::Custom(OwnedGc::new(Some(Box::new(
             SimulationUpdate {
-                outputs: Some(simulation_outputs),
+                outputs: simulation_outputs,
                 reverb_effect_params: reverb_effect_params.clone(),
             },
-        ))));
+        )))));
         node.source_position = source_position;
         node.listener_position = listener_position;
     }
