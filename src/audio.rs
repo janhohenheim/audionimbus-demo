@@ -572,6 +572,47 @@ impl AudioNodeProcessor for AmbisonicDecodeProcessor {
     }
 }
 
+struct SharedReverbData(ReflectionEffectParams);
+
+#[derive(Component, Clone)]
+struct ReverbDataNode;
+
+impl AudioNode for ReverbDataNode {
+    type Configuration = EmptyConfig;
+
+    fn info(&self, _: &Self::Configuration) -> AudioNodeInfo {
+        AudioNodeInfo::new().channel_config(ChannelConfig::new(0, 0))
+    }
+
+    fn construct_processor(
+        &self,
+        _configuration: &Self::Configuration,
+        _cx: ConstructProcessorContext,
+    ) -> impl AudioNodeProcessor {
+        Self
+    }
+}
+
+impl AudioNodeProcessor for ReverbDataNode {
+    fn process(
+        &mut self,
+        _info: &ProcInfo,
+        _buffers: ProcBuffers,
+        events: &mut ProcEvents,
+        extra: &mut ProcExtra,
+    ) -> ProcessStatus {
+        for mut event in events.drain() {
+            if let Some(params) = event.downcast::<ReflectionEffectParams>() {
+                if let Err(params) = extra.store.insert(SharedReverbData(params)) {
+                    extra.store.get_mut::<SharedReverbData>().0 = params.0;
+                }
+            }
+        }
+
+        ProcessStatus::ClearAllOutputs
+    }
+}
+
 #[derive(Resource, Deref, DerefMut)]
 pub(crate) struct AudionimbusContext(pub(crate) audionimbus::Context);
 
@@ -704,45 +745,4 @@ fn prepare_seedling_data(
     }
 
     Ok(())
-}
-
-struct SharedReverbData(ReflectionEffectParams);
-
-#[derive(Component, Clone)]
-struct ReverbDataNode;
-
-impl AudioNode for ReverbDataNode {
-    type Configuration = EmptyConfig;
-
-    fn info(&self, _: &Self::Configuration) -> AudioNodeInfo {
-        AudioNodeInfo::new().channel_config(ChannelConfig::new(0, 0))
-    }
-
-    fn construct_processor(
-        &self,
-        _configuration: &Self::Configuration,
-        _cx: ConstructProcessorContext,
-    ) -> impl AudioNodeProcessor {
-        Self
-    }
-}
-
-impl AudioNodeProcessor for ReverbDataNode {
-    fn process(
-        &mut self,
-        _info: &ProcInfo,
-        _buffers: ProcBuffers,
-        events: &mut ProcEvents,
-        extra: &mut ProcExtra,
-    ) -> ProcessStatus {
-        for mut event in events.drain() {
-            if let Some(params) = event.downcast::<ReflectionEffectParams>() {
-                if let Err(params) = extra.store.insert(SharedReverbData(params)) {
-                    extra.store.get_mut::<SharedReverbData>().0 = params.0;
-                }
-            }
-        }
-
-        ProcessStatus::ClearAllOutputs
-    }
 }
